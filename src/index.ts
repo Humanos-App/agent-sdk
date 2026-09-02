@@ -7,16 +7,23 @@
  * tool call through the guard. Plus the MCP connector, so apps that speak MCP
  * (Claude Desktop, Cursor, …) get governed without changing a line.
  */
-// Key custody + evidence (§16.5) — assurance is produced here, verified there.
+// Key custody + evidence (§16.5) — assurance is produced here, VERIFIED there, and the
+// evidence type is the protocol SDK's own `ConfinementEvidence`, so what this package emits
+// is exactly what `registerAgentKey` validates.
 export {
   softwareKey,
+  deviceSelfKey,
   custodialKey,
   attestedKey,
   forgedAttestedKey,
   buildDelegatedPoP,
-  attestationRootPublicJwk,
+  // Dev-only: the sim KMS oracle a verifier resolves a CustodyRef through, and the attestation
+  // root it must pin for `attestedKey` quotes to validate.
+  simKmsDescribeKey,
+  devNitroCa,
+  attestationRootPem,
 } from './key-provider.js';
-export type { ViaAgentKey, RegistrationEvidence, Assurance, Binding } from './key-provider.js';
+export type { ViaAgentKey, ConfinementEvidence, Assurance, Binding } from './key-provider.js';
 
 // The PEP — every tool call: challenge → PoP → verify → execute/refuse/step-up.
 export { ViaGuard, ViaDeniedError } from './guard.js';

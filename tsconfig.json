@@ -1,0 +1,17 @@
+{
+  // Lets the package be typechecked ON ITS OWN (`npm run check-types`). It had no tsconfig, so
+  // the only thing that ever compiled it was agent2 pulling it in by relative path — a package
+  // whose correctness depended on a consumer's config is not a defined package.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  // `../sdk-v03/src` is included because the imports below still reach into sibling SOURCE rather
+  // than resolving `@humanos/via-sdk-v03` as a package. See the note in package.json.
+  "include": ["src", "../sdk-v03/src"]
+}
