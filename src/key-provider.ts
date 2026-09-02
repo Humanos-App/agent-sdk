@@ -76,9 +76,11 @@ export async function softwareKey(): Promise<ViaAgentKey> {
 }
 
 /**
- * Custodial rung: the key lives in a (sim) KMS that never exports it. The guard only gets
- * `sign()` — it holds no private material — and the evidence is a REFERENCE the verifier
- * resolves itself via a `DescribeKey` oracle. Grants `hardware/custodial`.
+ * Custodial binding: the key lives in a (sim) KMS that never exports it. The guard only gets
+ * `sign()` — it holds no private material — and the evidence is a REFERENCE the verifier resolves
+ * itself via a `DescribeKey` oracle. Grants `pop/CUSTODIAL`: the oracle fact is real and is
+ * recorded on the binding axis; the assurance axis stays `pop` because nothing transferable was
+ * proved.
  */
 export async function custodialKey(provider = 'sim-kms'): Promise<ViaAgentKey> {
   // The private JWK is closed inside this factory — nothing outside can read it.
@@ -96,10 +98,15 @@ export async function custodialKey(provider = 'sim-kms'): Promise<ViaAgentKey> {
   SIM_KMS.set(ref.keyId, { exportable: false, publicJwk: kp.publicJwk, keyId: ref.keyId, keySpec: 'ECC_NIST_P256', origin: 'SIM_KMS' });
   return {
     publicJwk: kp.publicJwk,
-    // `hardware`, not `device`: this is what `validateCustody` GRANTS for a verified
-    // non-exportable KMS key. A claim the verifier will not honour is worse than useless — it
-    // makes `degradedFrom` fire on a key that was never degraded.
-    claimedAssurance: 'hardware',
+    // `pop/custodial`. An earlier version of this file claimed `hardware`, reasoning from what
+    // `validateCustody` granted — but the SDK was the thing that was wrong, and the spec says so
+    // explicitly (§16.5's table; v0.3 §9.1 calls the asymmetry deliberate).
+    //
+    // The custody fact is NOT lost: it IS `binding: custodial`, a value defined as "a custody
+    // oracle reports it". `assurance` answers a different question — what the verifier could
+    // PROVE — and an unsigned DescribeKey response is testimony, not a document: real, but not
+    // something a verifier can hand to an insurer. Only a chain to a pinned anchor is.
+    claimedAssurance: 'pop',
     claimedBinding: 'custodial',
     sign: (bytes) => signES256(bytes, kp.privateJwk), // "the KMS signs" — the caller never sees the key
     evidence: (_regNonce) => Promise.resolve({ type: 'custody', ref }),
@@ -122,15 +129,16 @@ export function simKmsDescribeKey(ref: CustodyRef): KeyDescription | null {
 }
 
 /**
- * The self-asserted device rung: the agent claims the key is non-exportable and the verifier
- * has no way to check. Honest `device/self` — strictly weaker than {@link custodialKey}, and the
- * right choice when there is no KMS a verifier can interrogate.
+ * The self-asserted variant: the agent claims the key is non-exportable and the verifier has no way
+ * to check. Grants `pop/self` — the same rung as {@link softwareKey}, because a claim is not
+ * evidence. What it adds is on the CHAIN, not in the rung: the assertion is recorded, so a later
+ * dispute has something signed to point at.
  */
 export async function deviceSelfKey(): Promise<ViaAgentKey> {
   const kp = await generateP256Key();
   return {
     publicJwk: kp.publicJwk,
-    claimedAssurance: 'device',
+    claimedAssurance: 'pop',
     claimedBinding: 'self',
     sign: (bytes) => signES256(bytes, kp.privateJwk),
     evidence: (_regNonce) => Promise.resolve({ type: 'device-self', nonExportable: true }),
