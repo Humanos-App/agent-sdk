@@ -1,0 +1,8 @@
+{
+  "name": "@humanos/agent-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Humanos Agent SDK — what an agent builder installs: key providers, delegated PoP, the platform client, the ViaGuard PEP, and the MCP connector. The VIA protocol itself lives in sdk-v03 (imported read-only).",
+  "exports": { ".": "./src/index.ts" }
+}
