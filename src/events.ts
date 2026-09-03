@@ -20,7 +20,7 @@ import type { EventType } from '../../sdk-v03/src/crypto/proof.js';
  * cryptographically attributable claim, not gateway hearsay. A decision event
  * with no outcome event after it is itself evidence: the visible crash window.
  *
- * Upstream landing (when unfrozen): spec §5.4 EventType + the SDK union, per
+ * Upstream landing (when unfrozen): spec v0.2-new §5.4 EventType + the SDK union, per
  * PRD §9.10.
  */
 export const AGENT_OUTCOME_EVENTS = ['ACTION_COMPLETED', 'ACTION_FAILED'] as const;

@@ -101,7 +101,7 @@ export class ViaGuard {
   async call<T = unknown>(tool: string, args: Record<string, unknown>, impl: ToolFn): Promise<GuardCallOutcome<T>> {
     const params = { ...args, tool };
 
-    // Local pre-flight (advisory only, R5/§5.3.1): saves a round-trip on obvious denials
+    // Local pre-flight (advisory only, R5/v0.2-new §5.3.1): saves a round-trip on obvious denials
     // in enforce mode; NEVER authoritative and never a substitute for the verifier.
     if (this.mode === 'enforce') {
       const preflight = evaluateRules(this.opts.compiled.actionVersion.rules.filter((r) => !r.name.startsWith('assurance_floor')), {

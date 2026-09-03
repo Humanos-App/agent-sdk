@@ -84,7 +84,7 @@ export class MiniPlatformClient {
     return this.post('/api/actions', { manifestYaml, exposure });
   }
 
-  /** §9 — the ceremony runs platform-side; the agent receives its STAMPed mandate + pinned action. */
+  /** v0.2-new §9 — the ceremony runs platform-side; the agent receives its STAMPed mandate + pinned action. */
   requestMandate(input: {
     actionId: string;
     agentName: string;
