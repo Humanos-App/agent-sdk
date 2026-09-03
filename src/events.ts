@@ -1,11 +1,11 @@
 import type { EventType } from '../../sdk-v03/src/crypto/proof.js';
 
 /**
- * PROTOTYPE-LOCAL event kinds — deliberately NOT added to the VIA spec or the
- * SDK: both stay frozen until this agent-SDK exploration settles (process rule:
- * spec/SDK change upstream-first, and only when we're sure). Until then agent2
- * widens the type at the `buildChainedEvent` boundary only; the SDK signs and
- * chains them exactly like any event (the kind is just a signed body claim).
+ * The two-phase outcome kinds. **They landed upstream on 2026-09-03**: both are in
+ * `sdk-v03`'s `EVENT_TYPES`, `EVENT_SCOPE` maps them to `credential`, and v0.3 §2.1
+ * specifies them. This comment previously said they were deliberately kept OUT of the
+ * spec and the SDK — that was true when written and stopped being true when they were
+ * added to the union without it being updated.
  *
  * Why they exist: the chain otherwise records DECISIONS, not EXECUTIONS — a
  * `VERIFICATION_APPROVED` followed by a crash leaves signed history claiming an
@@ -20,8 +20,7 @@ import type { EventType } from '../../sdk-v03/src/crypto/proof.js';
  * cryptographically attributable claim, not gateway hearsay. A decision event
  * with no outcome event after it is itself evidence: the visible crash window.
  *
- * Upstream landing (when unfrozen): spec v0.2-new §5.4 EventType + the SDK union, per
- * PRD §9.10.
+ * Still 🔮 on the platform side: nothing persists an outcome event yet (v0.3 §11).
  */
 export const AGENT_OUTCOME_EVENTS = ['ACTION_COMPLETED', 'ACTION_FAILED'] as const;
 export type AgentOutcomeKind = 'completed' | 'failed';
