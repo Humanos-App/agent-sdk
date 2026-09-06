@@ -1,5 +1,5 @@
 import { actionHash, evaluateRules, jwkThumbprint, unwrapUserParamValues } from './sdk.js';
-import type { RuleEvaluation, ViaEvent, ViaMandateCredential } from './sdk.js';
+import type { RuleEvaluation, ViaMandateCredential } from './sdk.js';
 import { buildDelegatedPoP, type ViaAgentKey } from './key-provider.js';
 import { outcomeParams, type AgentOutcomeKind } from './events.js';
 import type { CompiledLike, GuardVerifier, VerifyOutcome } from './types.js';
@@ -120,11 +120,15 @@ export class ViaGuard {
         : { decision: 'deny', reason: 'stepup_declined', evaluations: [] };
     }
 
+    // The decision to report against — the signed event when the verifier returned it, or the
+    // id alone when the platform appends the signed event later (outbox).
+    const decisionId = outcome.event?.id ?? outcome.decisionEventId;
+
     if (outcome.decision === 'allow') {
       return {
         decision: 'allow',
         evaluations: outcome.evaluations,
-        result: await this.execute<T>(args, impl, outcome.event),
+        result: await this.execute<T>(args, impl, decisionId),
       };
     }
     if (this.mode === 'observe') {
@@ -135,7 +139,7 @@ export class ViaGuard {
         reason: outcome.reason,
         evaluations: outcome.evaluations,
         observed: true,
-        result: await this.execute<T>(args, impl, outcome.event),
+        result: await this.execute<T>(args, impl, decisionId),
       };
     }
     throw new ViaDeniedError(outcome.reason, outcome.evaluations);
@@ -149,21 +153,21 @@ export class ViaGuard {
    * execution and report leaves a decision event with no outcome — the visible
    * gap two-phase exists to expose.
    */
-  private async execute<T>(args: Record<string, unknown>, impl: ToolFn, decision?: ViaEvent): Promise<T> {
+  private async execute<T>(args: Record<string, unknown>, impl: ToolFn, decisionId?: string): Promise<T> {
     try {
       const result = (await impl(args)) as T;
-      await this.report(decision, 'completed');
+      await this.report(decisionId, 'completed');
       return result;
     } catch (e) {
-      await this.report(decision, 'failed', e instanceof Error ? e.message : String(e));
+      await this.report(decisionId, 'failed', e instanceof Error ? e.message : String(e));
       throw e;
     }
   }
 
-  private async report(decision: ViaEvent | undefined, outcome: AgentOutcomeKind, error?: string): Promise<void> {
-    if (!decision) return;
+  private async report(decisionId: string | undefined, outcome: AgentOutcomeKind, error?: string): Promise<void> {
+    if (!decisionId) return;
     const { mandate, agentKey, verifier } = this.opts;
-    const params = outcomeParams(decision.id, outcome, error);
+    const params = outcomeParams(decisionId, outcome, error);
     const ch = await verifier.challenge({ mandateId: mandate.id });
     const pop = await buildDelegatedPoP(
       {
@@ -177,7 +181,7 @@ export class ViaGuard {
     );
     await verifier.reportOutcome({
       mandate,
-      decisionEventId: decision.id,
+      decisionEventId: decisionId,
       outcome,
       error,
       pop,

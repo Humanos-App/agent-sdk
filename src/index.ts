@@ -70,6 +70,11 @@ export type { ImportActionOptions, ImportActionResult } from './platform/import-
 // organization's API key (journey A4 / direction D3 in spec/MCP-JOURNEYS.md).
 export { createViaMcpClient, signRequest, ViaMcpAuthError } from './mcp/client.js';
 export type { ViaMcpClient, ViaMcpClientOptions, ViaToolResult } from './mcp/client.js';
+
+// The GuardVerifier over that client — `ViaGuard` unchanged, the connector as the verifier
+// (flow B in spec/END-TO-END-FLOWS.md), plus the startup question "which mandates do I hold?".
+export { McpGuardVerifier, McpVerifierError, getMandates } from './mcp/guard-verifier.js';
+export type { HeldMandate } from './mcp/guard-verifier.js';
 export type { StdioTransport } from './mcp/stdio.js';
 
 // The wire contract.

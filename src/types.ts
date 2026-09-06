@@ -13,6 +13,12 @@ export interface VerifyOutcome {
   evaluations: RuleEvaluation[];
   /** The signed VERIFICATION_* VIAEvent appended to the credential's chain (absent on rechallenge). */
   event?: ViaEvent;
+  /**
+   * The decision event's id when the platform signs it ASYNCHRONOUSLY (Humanos appends chain
+   * events through an outbox worker, so at answer time only the URN exists). The guard reports
+   * the outcome against `event?.id ?? decisionEventId`; a verifier supplies one or the other.
+   */
+  decisionEventId?: string;
 }
 
 /** Aggregate exposure metering config (PRD §5.5) — declared at publish time. */
