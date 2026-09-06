@@ -42,6 +42,26 @@ export { startViaMcpServer, defaultPlainReason } from './mcp/server.js';
 export type { ViaMcpConfig, ViaMcpServer, JsonRpcMessage } from './mcp/server.js';
 export { createStdioTransport } from './mcp/stdio.js';
 
+// EXTRACTION — parse an already-built agent's tool surface into a VIAAction draft. Params and
+// descriptions are derived; `rules`/`userParams` are ALWAYS empty (R8), because constraints are
+// policy and are never guessed.
+//
+// Its input/output types are ALIASED here because `types.ts` already owns `McpTool`,
+// `McpToolsList` and `ExtractedDraft` for the connector's WIRE contract, and these are different
+// things that happen to share names: the wire `McpTool.inputSchema` is a loose
+// `Record<string, unknown>`, while extraction needs the parsed `{type, properties, required}`;
+// the wire `ExtractedDraft` is `{yaml, notes}` returned by the platform, while extraction produces
+// `{yaml, candidates}` — the structured twin of the YAML comments, because comments are not API.
+// Unifying them is a real follow-up; aliasing keeps both honest until then.
+export { extractFromToolsList } from './extract/mcp.js';
+export type {
+  ExtractOptions,
+  ExtractedDraft as ExtractionResult,
+  McpTool as ExtractionTool,
+  McpToolProperty as ExtractionToolProperty,
+  McpToolsList as ExtractionToolsList,
+} from './extract/mcp.js';
+
 // The MCP CLIENT — the other direction: consuming the Humanos connector's tools with the
 // organization's API key (journey A4 / direction D3 in spec/MCP-JOURNEYS.md).
 export { createViaMcpClient, signRequest, ViaMcpAuthError } from './mcp/client.js';
