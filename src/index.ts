@@ -62,6 +62,10 @@ export type {
   McpToolsList as ExtractionToolsList,
 } from './extract/mcp.js';
 
+// IMPORT — land an extracted surface on the platform as a draft VIAAction.
+export { importActionDraft, toWireTools } from './platform/import-action.js';
+export type { ImportActionOptions, ImportActionResult } from './platform/import-action.js';
+
 // The MCP CLIENT — the other direction: consuming the Humanos connector's tools with the
 // organization's API key (journey A4 / direction D3 in spec/MCP-JOURNEYS.md).
 export { createViaMcpClient, signRequest, ViaMcpAuthError } from './mcp/client.js';
