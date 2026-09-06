@@ -41,6 +41,11 @@ export type { AgentOutcomeKind } from './events.js';
 export { startViaMcpServer, defaultPlainReason } from './mcp/server.js';
 export type { ViaMcpConfig, ViaMcpServer, JsonRpcMessage } from './mcp/server.js';
 export { createStdioTransport } from './mcp/stdio.js';
+
+// The MCP CLIENT — the other direction: consuming the Humanos connector's tools with the
+// organization's API key (journey A4 / direction D3 in spec/MCP-JOURNEYS.md).
+export { createViaMcpClient, signRequest, ViaMcpAuthError } from './mcp/client.js';
+export type { ViaMcpClient, ViaMcpClientOptions, ViaToolResult } from './mcp/client.js';
 export type { StdioTransport } from './mcp/stdio.js';
 
 // The wire contract.
