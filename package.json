@@ -3,15 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Humanos Agent SDK \u2014 what an agent builder installs: key providers, delegated PoP, the platform client, the ViaGuard PEP, and the MCP connector. The VIA protocol itself lives in sdk-v03 (imported read-only).",
+  "description": "Humanos Agent SDK — what an agent builder installs: key providers, delegated PoP, the platform client, the ViaGuard PEP, and the MCP connector. The VIA protocol itself lives in sdk-v03 (imported read-only).",
   "exports": {
     ".": "./src/index.ts"
   },
   "scripts": {
-    "check-types": "tsc -p tsconfig.json --noEmit"
+    "check-types": "tsc -p tsconfig.json --noEmit",
+    "test": "../node_modules/.bin/vitest run",
+    "test:watch": "../node_modules/.bin/vitest"
   },
   "peerDependencies": {
     "@humanos/via-sdk-v03": "^0.3.0"
   },
-  "//boundary": "Imports sdk-v03 by RELATIVE SOURCE PATH (../../sdk-v03/src/...), not as the package @humanos/via-sdk-v03 \u2014 the repo root's workspaces list only [sdk, examples], so the name does not resolve. Every symbol used is reachable from the public barrel or the ./agent/sim subpath, so the deep paths are gratuitous; closing this needs the root workspaces widened and a reinstall. Until then `peerDependencies` below records the real relationship, and exports ship SOURCE, not dist."
+  "//boundary": "Imports sdk-v03 by RELATIVE SOURCE PATH (../../sdk-v03/src/...), not as the package @humanos/via-sdk-v03 — the repo root's workspaces list only [sdk, examples], so the name does not resolve. Every symbol used is reachable from the public barrel or the ./agent/sim subpath, so the deep paths are gratuitous; closing this needs the root workspaces widened and a reinstall. Until then `peerDependencies` below records the real relationship, and exports ship SOURCE, not dist."
 }
