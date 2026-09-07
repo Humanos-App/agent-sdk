@@ -28,8 +28,25 @@ export interface ImportActionOptions {
   /** Action name. A re-import under the same name creates a NEW VERSION. */
   name: string;
   description?: string;
+  /**
+   * The values the PERSON fixes in the mandate — declared here so the draft lands with them as
+   * userParams, the only side a rule can bind a limit to. Shape, not policy: `suggested` is what
+   * the agent would propose in its request; it is echoed back and never stored in the action.
+   */
+  grantorParams?: Record<string, GrantorParam>;
+  /** Tool parameters the person, not the agent, supplies — by name; they move to userParams. */
+  grantorRoles?: string[];
   fetchImpl?: typeof fetch;
   now?: () => number;
+}
+
+export interface GrantorParam {
+  type: string;
+  items?: string;
+  values?: string;
+  description?: string;
+  required?: boolean;
+  suggested?: unknown;
 }
 
 export interface ImportActionResult {
@@ -37,17 +54,22 @@ export interface ImportActionResult {
   versionId?: string;
   /** False when this was a re-import that added a version to an existing action. */
   created: boolean;
+  /** The split the draft landed with. */
+  userParams: string[];
+  executionParams: string[];
+  suggested: Record<string, unknown>;
 }
 
 /** The endpoint's tool shape — flattened from MCP's JSON Schema, which it does not need to parse. */
 interface WireTool {
   name: string;
   description?: string;
-  params: Record<string, { type: string; description?: string; required?: boolean }>;
+  params: Record<string, { type: string; description?: string; required?: boolean; role?: 'execution' | 'grantor'; items?: string }>;
 }
 
-/** JSON Schema → the flat `{type, description, required}` the platform stores per parameter. */
-export function toWireTools(list: McpToolsList): WireTool[] {
+/** JSON Schema → the flat `{type, description, required, role}` the platform stores per parameter. */
+export function toWireTools(list: McpToolsList, grantorRoles: string[] = []): WireTool[] {
+  const grantor = new Set(grantorRoles);
   return list.tools.map((tool) => {
     const required = new Set(tool.inputSchema?.required ?? []);
     const params: WireTool['params'] = {};
@@ -56,6 +78,7 @@ export function toWireTools(list: McpToolsList): WireTool[] {
         type: prop.type ?? 'string',
         ...(prop.description ? { description: prop.description } : {}),
         ...(required.has(name) ? { required: true } : {}),
+        ...(grantor.has(name) ? { role: 'grantor' as const } : {}),
       };
     }
     return { name: tool.name, ...(tool.description ? { description: tool.description } : {}), params };
@@ -73,7 +96,8 @@ export async function importActionDraft(
   const body = JSON.stringify({
     name: options.name,
     ...(options.description ? { description: options.description } : {}),
-    tools: toWireTools(list),
+    tools: toWireTools(list, options.grantorRoles),
+    ...(options.grantorParams ? { grantorParams: options.grantorParams } : {}),
   });
   const timestamp = now();
 
