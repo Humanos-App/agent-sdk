@@ -150,3 +150,23 @@ describe('ViaGuard — the per-call pipeline (v0.3 §16.11, §16.6)', () => {
     await expect(t2.book_load()).rejects.toThrow(ViaDeniedError);
   });
 });
+
+describe('ViaGuard — step-up by id (v0.3 §17.4)', () => {
+  it('hands onRechallenge the step-up the verifier opened, and re-presents with its id once approved', async () => {
+    let seen: unknown;
+    const { g, verified } = await guard(
+      (_input, n) => (n === 1 ? { decision: 'rechallenge', evaluations: [], stepUp: { id: 'su-1', approveLink: 'https://app.test/approve/t' } } : allow()),
+      { onRechallenge: (info) => { seen = info.stepUp; return true; } },
+    );
+    const out = await g.call('wire', { amount: 5 }, () => 'sent');
+    expect(out.decision).toBe('allow');
+    expect(seen).toEqual({ id: 'su-1', approveLink: 'https://app.test/approve/t' });
+    expect(verified[1]!.stepUpId).toBe('su-1');
+  });
+
+  it("a call can present an approval it already holds — a retry after the person approved", async () => {
+    const { g, verified } = await guard(allow);
+    await g.call('wire', { amount: 5 }, () => 'sent', { stepUpId: 'su-9' });
+    expect(verified[0]!.stepUpId).toBe('su-9');
+  });
+});

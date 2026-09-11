@@ -19,6 +19,11 @@ export interface VerifyOutcome {
    * the outcome against `event?.id ?? decisionEventId`; a verifier supplies one or the other.
    */
   decisionEventId?: string;
+  /**
+   * On `rechallenge` (v0.3 §17.4): the step-up the verifier opened — the page where the person
+   * approves this exact call, and the id to present once they have.
+   */
+  stepUp?: StepUpRef;
 }
 
 /** Aggregate exposure metering config (PRD §5.5) — declared at publish time. */
@@ -54,6 +59,8 @@ export interface VerifyInput {
   params: Record<string, unknown>;
   pop: string;
   stepUpSatisfied?: boolean;
+  /** v0.3 §17.4 — an APPROVED step-up for exactly this call, by id; the verifier checks it against its record. */
+  stepUpId?: string;
   /** v0.3 §8 — the actor snapshot the agent PRESENTS; platforms default to their current. */
   actorSnapshot?: ActorSnapshot;
   now?: Date;
@@ -95,4 +102,15 @@ export interface McpToolsList {
 export interface ExtractedDraft {
   yaml: string;
   notes?: string[];
+}
+
+/** A step-up as the verifier reports it on a `rechallenge`. */
+export interface StepUpRef {
+  id: string;
+  /** Where the person approves. Show it to them; nothing else on the agent side can approve. */
+  approveLink?: string;
+  /** `otp` (a code to their channel) or `webauthn` (their passkey). */
+  method?: string;
+  expiresAt?: string;
+  status?: string;
 }

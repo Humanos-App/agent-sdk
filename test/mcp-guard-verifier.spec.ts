@@ -100,3 +100,20 @@ describe('McpGuardVerifier — the GuardVerifier over the connector', () => {
     );
   });
 });
+
+describe('McpGuardVerifier — a step-up is presented by its id', () => {
+  it('sends stepUpId to via_verify, never the old client-asserted boolean', async () => {
+    const calls: { name: string; args: Record<string, unknown> }[] = [];
+    const client = {
+      initialize: async () => ({ serverInfo: { name: 't', version: '0' }, protocolVersion: 'x' }),
+      listTools: async () => [],
+      callTool: async (name: string, args: Record<string, unknown> = {}) => {
+        calls.push({ name, args });
+        return { text: JSON.stringify({ decision: 'allow', evaluations: [] }), isError: false };
+      },
+    };
+    await new McpGuardVerifier(client).verify({ mandate: { id: 'urn:via:credential:m' } as never, tool: 't', params: { tool: 't' }, pop: 'p', stepUpSatisfied: true, stepUpId: 'su-1' });
+    expect(calls[0]!.args).toMatchObject({ stepUpId: 'su-1' });
+    expect(calls[0]!.args).not.toHaveProperty('stepUpSatisfied');
+  });
+});

@@ -2,7 +2,7 @@ import { actionHash, evaluateRules, jwkThumbprint, unwrapUserParamValues } from 
 import type { RuleEvaluation, ViaMandateCredential } from './sdk.js';
 import { buildDelegatedPoP, type ViaAgentKey } from './key-provider.js';
 import { outcomeParams, type AgentOutcomeKind } from './events.js';
-import type { CompiledLike, GuardVerifier, VerifyOutcome } from './types.js';
+import type { CompiledLike, GuardVerifier, StepUpRef, VerifyOutcome } from './types.js';
 
 export type { GuardVerifier, VerifyOutcome } from './types.js';
 
@@ -39,7 +39,7 @@ export interface GuardOptions {
    */
   mode?: 'observe' | 'enforce';
   /** §17.4 — route a RECHALLENGE to the builder's approval channel; return true once satisfied. */
-  onRechallenge?: (info: { tool: string; params: Record<string, unknown> }) => boolean | Promise<boolean>;
+  onRechallenge?: (info: { tool: string; params: Record<string, unknown>; stepUp?: StepUpRef }) => boolean | Promise<boolean>;
   now?: () => Date;
 }
 
@@ -98,7 +98,7 @@ export class ViaGuard {
   }
 
   /** Guard one tool call. Unmanifested tools are still presented (R6) — drift is spec-native denials. */
-  async call<T = unknown>(tool: string, args: Record<string, unknown>, impl: ToolFn): Promise<GuardCallOutcome<T>> {
+  async call<T = unknown>(tool: string, args: Record<string, unknown>, impl: ToolFn, opts: { stepUpId?: string } = {}): Promise<GuardCallOutcome<T>> {
     const params = { ...args, tool };
 
     // Local pre-flight (advisory only, R5/v0.2-new §5.3.1): saves a round-trip on obvious denials
@@ -111,12 +111,14 @@ export class ViaGuard {
       void preflight; // advisory: a real SDK would log/telemetry this; the decision stays with the verifier.
     }
 
-    let outcome = await this.present(tool, params, false);
+    // `stepUpId`: an approval the caller already holds for exactly this call (a retry after the person approved).
+    let outcome = await this.present(tool, params, false, opts.stepUpId);
 
     if (outcome.decision === 'rechallenge') {
-      const satisfied = this.opts.onRechallenge ? await this.opts.onRechallenge({ tool, params }) : false;
+      const stepUp = outcome.stepUp;
+      const satisfied = this.opts.onRechallenge ? await this.opts.onRechallenge({ tool, params, ...(stepUp ? { stepUp } : {}) }) : false;
       outcome = satisfied
-        ? await this.present(tool, params, true) // fresh challenge + fresh PoP — the old nonce is spent
+        ? await this.present(tool, params, true, stepUp?.id) // fresh challenge + fresh PoP — the old nonce is spent; the approval named by its id
         : { decision: 'deny', reason: 'stepup_declined', evaluations: [] };
     }
 
@@ -189,7 +191,7 @@ export class ViaGuard {
     });
   }
 
-  private async present(tool: string, params: Record<string, unknown>, stepUpSatisfied: boolean): Promise<VerifyOutcome> {
+  private async present(tool: string, params: Record<string, unknown>, stepUpSatisfied: boolean, stepUpId?: string): Promise<VerifyOutcome> {
     const { mandate, agentKey, verifier } = this.opts;
     const ch = await verifier.challenge({ mandateId: mandate.id });
     const pop = await buildDelegatedPoP(
@@ -202,6 +204,6 @@ export class ViaGuard {
       },
       agentKey.sign,
     );
-    return verifier.verify({ mandate, tool, params, pop, stepUpSatisfied, now: this.opts.now?.() });
+    return verifier.verify({ mandate, tool, params, pop, stepUpSatisfied, ...(stepUpId ? { stepUpId } : {}), now: this.opts.now?.() });
   }
 }

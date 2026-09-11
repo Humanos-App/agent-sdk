@@ -42,6 +42,14 @@ export { startViaMcpServer, defaultPlainReason } from './mcp/server.js';
 export type { ViaMcpConfig, ViaMcpServer, JsonRpcMessage } from './mcp/server.js';
 export { createStdioTransport } from './mcp/stdio.js';
 
+// The governing proxy — ViaGuard in front of MCP servers you did not write (Slack's, Gmail's, …):
+// the servers' tools merged, declared to Humanos by service, every call verified before it reaches them.
+export { startViaMcpProxy, pickMandate, declaredParams, ViaStepUpPendingError } from './mcp/proxy.js';
+export type { ViaMcpProxyConfig, ViaMcpProxy, ProxiedTool } from './mcp/proxy.js';
+export { connectUpstream, inProcessUpstream } from './mcp/upstream.js';
+export type { Upstream, UpstreamSpec, UpstreamTool, UpstreamResult } from './mcp/upstream.js';
+export type { StepUpRef } from './types.js';
+
 // EXTRACTION — parse an already-built agent's tool surface into a VIAAction draft. Params and
 // descriptions are derived; `rules`/`userParams` are ALWAYS empty (R8), because constraints are
 // policy and are never guessed.

@@ -54,7 +54,9 @@ export class McpGuardVerifier implements GuardVerifier {
       tool: input.tool,
       params: input.params,
       pop: input.pop,
-      ...(input.stepUpSatisfied !== undefined ? { stepUpSatisfied: input.stepUpSatisfied } : {}),
+      // v0.3 §17.4 on the connector: an approval is named by its id and checked against the
+      // platform's record. The client-asserted boolean it once took is gone — sending it proves nothing.
+      ...(input.stepUpId ? { stepUpId: input.stepUpId } : {}),
     });
     if (r.isError) throw new McpVerifierError('via_verify', r.text);
     return parse<VerifyOutcome>('via_verify', r.text);
