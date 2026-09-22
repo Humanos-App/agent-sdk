@@ -59,15 +59,15 @@ describe('the VIA MCP client — journey A4', () => {
 
   describe('talking to the connector', () => {
     it('lists tools', async () => {
-      const { impl } = stubFetch({ result: { tools: [{ name: 'via_list_agents' }] } });
+      const { impl } = stubFetch({ result: { tools: [{ name: 'list_agents' }] } });
       const client = createViaMcpClient({ url: URL, apiKey: API_KEY, signatureSecret: SECRET, fetchImpl: impl });
-      expect((await client.listTools()).map((t) => t.name)).toEqual(['via_list_agents']);
+      expect((await client.listTools()).map((t) => t.name)).toEqual(['list_agents']);
     });
 
     it('returns a tool result as text', async () => {
       const { impl } = stubFetch({ result: { content: [{ type: 'text', text: '{"ok":true}' }] } });
       const client = createViaMcpClient({ url: URL, apiKey: API_KEY, signatureSecret: SECRET, fetchImpl: impl });
-      const out = await client.callTool('via_server_info');
+      const out = await client.callTool('server_info');
       expect(out).toEqual({ text: '{"ok":true}', isError: false });
     });
 
@@ -76,7 +76,7 @@ describe('the VIA MCP client — journey A4', () => {
       // retry loop against a decision that will never change.
       const { impl } = stubFetch({ result: { content: [{ type: 'text', text: 'No agent did:key:zX …' }], isError: true } });
       const client = createViaMcpClient({ url: URL, apiKey: API_KEY, signatureSecret: SECRET, fetchImpl: impl });
-      const out = await client.callTool('via_get_events', { did: 'did:key:zX' });
+      const out = await client.callTool('get_events', { did: 'did:key:zX' });
       expect(out.isError).toBe(true);
       expect(out.text).toContain('No agent');
     });

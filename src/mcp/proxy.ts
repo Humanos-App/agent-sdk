@@ -5,7 +5,7 @@
  * other case: an agent that uses someone else's MCP servers (Slack's, Gmail's, a payments API).
  * The agent connects to the proxy; the proxy connects to the servers; every `tools/call` passes
  * the same guard an embedded agent runs — challenge, a proof over THIS call signed with the
- * proxy's own key, `via_verify` on Humanos — and only an allow reaches the server. The servers'
+ * proxy's own key, `verify` on Humanos — and only an allow reaches the server. The servers'
  * credentials live here, not in the agent, so there is no path around the gate: this is where a
  * call is BLOCKED, not advised (plan §9 item 5, for agents we build).
  *
@@ -166,7 +166,7 @@ export async function startViaMcpProxy(cfg: ViaMcpProxyConfig): Promise<ViaMcpPr
     for (const service of services) {
       const ts = tools.filter((t) => t.service === service);
       if (ts.length > 200) process.stderr.write(`via-proxy: ${service} has ${ts.length} tools; the first 200 are declared\n`);
-      const r = await cfg.humanos.callTool('via_declare_tools', {
+      const r = await cfg.humanos.callTool('declare_tools', {
         did: cfg.did,
         tools: ts.slice(0, 200).map((t) => ({
           name: t.upstreamName,
@@ -177,7 +177,7 @@ export async function startViaMcpProxy(cfg: ViaMcpProxyConfig): Promise<ViaMcpPr
           ...(typeof t.definition.annotations?.destructiveHint === 'boolean' ? { destructiveHint: t.definition.annotations.destructiveHint } : {}),
         })),
       });
-      if (r.isError) throw new Error(`via_declare_tools refused for ${service}: ${r.text}`);
+      if (r.isError) throw new Error(`declare_tools refused for ${service}: ${r.text}`);
     }
     declared = { services, tools: tools.length };
   }

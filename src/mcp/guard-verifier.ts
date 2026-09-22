@@ -7,9 +7,9 @@
  *  - **`verify` sends the mandate's ID, never the mandate.** The platform is the store; it loads
  *    its own copy, scoped to the organization the API key belongs to. A presented copy would be
  *    redundant at best and, tampered, a thing the verifier would have to distrust anyway.
- *  - **A deny arrives as a RESULT, not a tool error.** The connector answers `via_verify` with a
+ *  - **A deny arrives as a RESULT, not a tool error.** The connector answers `verify` with a
  *    `VerifyOutcome` whatever the decision, so the guard consumes it directly. `isError` on
- *    `via_challenge` / `via_report_outcome` means the request could not be answered (a mandate
+ *    `challenge` / `report_outcome` means the request could not be answered (a mandate
  *    outside the caller's organization, a caller without an org key), which is thrown.
  *
  * Also here: `getMandates`, the agent's startup question — "which mandates do I hold?" — answered
@@ -43,13 +43,13 @@ export class McpGuardVerifier implements GuardVerifier {
   constructor(private readonly client: ViaMcpClient) {}
 
   async challenge(input: { mandateId: string }): Promise<ChallengeGrant> {
-    const r = await this.client.callTool('via_challenge', { mandateId: input.mandateId });
-    if (r.isError) throw new McpVerifierError('via_challenge', r.text);
-    return parse<ChallengeGrant>('via_challenge', r.text);
+    const r = await this.client.callTool('challenge', { mandateId: input.mandateId });
+    if (r.isError) throw new McpVerifierError('challenge', r.text);
+    return parse<ChallengeGrant>('challenge', r.text);
   }
 
   async verify(input: VerifyInput): Promise<VerifyOutcome> {
-    const r = await this.client.callTool('via_verify', {
+    const r = await this.client.callTool('verify', {
       mandateId: input.mandate.id,
       tool: input.tool,
       params: input.params,
@@ -58,24 +58,24 @@ export class McpGuardVerifier implements GuardVerifier {
       // platform's record. The client-asserted boolean it once took is gone — sending it proves nothing.
       ...(input.stepUpId ? { stepUpId: input.stepUpId } : {}),
     });
-    if (r.isError) throw new McpVerifierError('via_verify', r.text);
-    return parse<VerifyOutcome>('via_verify', r.text);
+    if (r.isError) throw new McpVerifierError('verify', r.text);
+    return parse<VerifyOutcome>('verify', r.text);
   }
 
   async reportOutcome(input: ReportOutcomeInput): Promise<{ recorded: ViaEvent } | { rejected: string }> {
-    const r = await this.client.callTool('via_report_outcome', {
+    const r = await this.client.callTool('report_outcome', {
       mandateId: input.mandate.id,
       decisionEventId: input.decisionEventId,
       outcome: input.outcome,
       ...(input.error ? { error: input.error } : {}),
       pop: input.pop,
     });
-    if (r.isError) throw new McpVerifierError('via_report_outcome', r.text);
-    return parse<{ recorded: ViaEvent } | { rejected: string }>('via_report_outcome', r.text);
+    if (r.isError) throw new McpVerifierError('report_outcome', r.text);
+    return parse<{ recorded: ViaEvent } | { rejected: string }>('report_outcome', r.text);
   }
 }
 
-/** One held mandate, as `via_get_mandate` returns it. */
+/** One held mandate, as `get_mandate` returns it. */
 export interface HeldMandate {
   mandate: ViaMandateCredential;
   /** The pinned, published action version — `content` holds the rules the guard pre-flights. */
@@ -90,9 +90,9 @@ export async function getMandates(
   client: ViaMcpClient,
   did: string,
 ): Promise<{ mandate: ViaMandateCredential; compiled: CompiledLike; action: HeldMandate['action'] }[]> {
-  const r = await client.callTool('via_get_mandate', { did });
-  if (r.isError) throw new McpVerifierError('via_get_mandate', r.text);
-  const held = parse<HeldMandate[]>('via_get_mandate', r.text);
+  const r = await client.callTool('get_mandate', { did });
+  if (r.isError) throw new McpVerifierError('get_mandate', r.text);
+  const held = parse<HeldMandate[]>('get_mandate', r.text);
   return held.map((h) => ({
     mandate: h.mandate,
     action: h.action,

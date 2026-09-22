@@ -27,14 +27,14 @@ const mandate = { id: 'did:web:humanos.tech::credential:abc' } as ViaMandateCred
 
 describe('McpGuardVerifier — the GuardVerifier over the connector', () => {
   it('challenge: forwards the mandate id and returns the grant', async () => {
-    const { client, calls } = fakeClient({ via_challenge: json({ nonce: 'agent_x_1_2', aud: 'did:key:zOrg', ttlMs: 300000 }) });
+    const { client, calls } = fakeClient({ challenge: json({ nonce: 'agent_x_1_2', aud: 'did:key:zOrg', ttlMs: 300000 }) });
     const grant = await new McpGuardVerifier(client).challenge({ mandateId: mandate.id });
     expect(grant).toEqual({ nonce: 'agent_x_1_2', aud: 'did:key:zOrg', ttlMs: 300000 });
-    expect(calls[0]).toEqual({ name: 'via_challenge', args: { mandateId: mandate.id } });
+    expect(calls[0]).toEqual({ name: 'challenge', args: { mandateId: mandate.id } });
   });
 
   it('verify: sends the mandate ID and NEVER the mandate', async () => {
-    const { client, calls } = fakeClient({ via_verify: json({ decision: 'allow', evaluations: [], decisionEventId: 'urn:e1' }) });
+    const { client, calls } = fakeClient({ verify: json({ decision: 'allow', evaluations: [], decisionEventId: 'urn:e1' }) });
     const out = await new McpGuardVerifier(client).verify({
       mandate,
       tool: 'book_load',
@@ -54,7 +54,7 @@ describe('McpGuardVerifier — the GuardVerifier over the connector', () => {
   });
 
   it('verify: a DENY is an outcome, not an error', async () => {
-    const { client } = fakeClient({ via_verify: json({ decision: 'deny', reason: 'rule_failed', evaluations: [{ rule: 'cap', result: 'fail' }] }) });
+    const { client } = fakeClient({ verify: json({ decision: 'deny', reason: 'rule_failed', evaluations: [{ rule: 'cap', result: 'fail' }] }) });
     const out = await new McpGuardVerifier(client).verify({ mandate, tool: 't', params: { tool: 't' }, pop: 'p' });
     expect(out.decision).toBe('deny');
     expect(out.reason).toBe('rule_failed');
@@ -62,8 +62,8 @@ describe('McpGuardVerifier — the GuardVerifier over the connector', () => {
 
   it('a tool refusal (isError) on challenge/report THROWS, with the reason', async () => {
     const { client } = fakeClient({
-      via_challenge: refusal('No mandate … is held by this organization.'),
-      via_report_outcome: refusal('mandate verification requires an organization API key'),
+      challenge: refusal('No mandate … is held by this organization.'),
+      report_outcome: refusal('mandate verification requires an organization API key'),
     });
     const v = new McpGuardVerifier(client);
     await expect(v.challenge({ mandateId: mandate.id })).rejects.toBeInstanceOf(McpVerifierError);
@@ -71,7 +71,7 @@ describe('McpGuardVerifier — the GuardVerifier over the connector', () => {
   });
 
   it('reportOutcome: forwards the two-phase params the guard hashed', async () => {
-    const { client, calls } = fakeClient({ via_report_outcome: json({ recorded: { id: 'urn:e2' } }) });
+    const { client, calls } = fakeClient({ report_outcome: json({ recorded: { id: 'urn:e2' } }) });
     const r = await new McpGuardVerifier(client).reportOutcome({ mandate, decisionEventId: 'urn:e1', outcome: 'failed', error: 'boom', pop: 'p' });
     expect(r).toEqual({ recorded: { id: 'urn:e2' } });
     expect(calls[0]!.args).toEqual({ mandateId: mandate.id, decisionEventId: 'urn:e1', outcome: 'failed', error: 'boom', pop: 'p' });
@@ -80,7 +80,7 @@ describe('McpGuardVerifier — the GuardVerifier over the connector', () => {
   it('getMandates: shapes the held action into the CompiledLike the guard takes', async () => {
     const rules = [{ name: 'cap', description: 'd', conditions: [], expression: 'executionParams.rate_usd <= userParams.max' }];
     const { client, calls } = fakeClient({
-      via_get_mandate: json([{ mandate, action: { urn: 'urn:via:action:v1', content: { rules } } }, { mandate, action: null }]),
+      get_mandate: json([{ mandate, action: { urn: 'urn:via:action:v1', content: { rules } } }, { mandate, action: null }]),
     });
     const held = await getMandates(client, 'did:web:humanos.tech:agent:abc');
     expect(calls[0]!.args).toEqual({ did: 'did:web:humanos.tech:agent:abc' });
@@ -102,7 +102,7 @@ describe('McpGuardVerifier — the GuardVerifier over the connector', () => {
 });
 
 describe('McpGuardVerifier — a step-up is presented by its id', () => {
-  it('sends stepUpId to via_verify, never the old client-asserted boolean', async () => {
+  it('sends stepUpId to verify, never the old client-asserted boolean', async () => {
     const calls: { name: string; args: Record<string, unknown> }[] = [];
     const client = {
       initialize: async () => ({ serverInfo: { name: 't', version: '0' }, protocolVersion: 'x' }),

@@ -72,11 +72,11 @@ function humanos(held = [SLACK_MANDATE, GMAIL_MANDATE]) {
     initialize: async () => ({ serverInfo: { name: 'humanos', version: '0' }, protocolVersion: '2025-06-18' }),
     listTools: async () => [],
     callTool: async (name, args = {}) => {
-      if (name === 'via_declare_tools') { declared.push(args); return answer({ recorded: (args.tools as unknown[]).length }); }
-      if (name === 'via_get_mandate') return answer(held);
-      if (name === 'via_challenge') return answer({ nonce: `n-${++n}`, aud: 'did:web:org', ttlMs: 60_000 });
-      if (name === 'via_report_outcome') { reported.push(args); return answer({ recorded: { id: `urn:via:event:o-${reported.length}` } }); }
-      if (name === 'via_verify') {
+      if (name === 'declare_tools') { declared.push(args); return answer({ recorded: (args.tools as unknown[]).length }); }
+      if (name === 'get_mandate') return answer(held);
+      if (name === 'challenge') return answer({ nonce: `n-${++n}`, aud: 'did:web:org', ttlMs: 60_000 });
+      if (name === 'report_outcome') { reported.push(args); return answer({ recorded: { id: `urn:via:event:o-${reported.length}` } }); }
+      if (name === 'verify') {
         verified.push(args);
         const h = held.find((x) => x.mandate.id === args.mandateId)!;
         const params = args.params as Record<string, unknown>;
