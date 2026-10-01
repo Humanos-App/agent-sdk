@@ -41,7 +41,7 @@ export { evaluateRules } from '../../sdk-v03/src/cel/evaluate.js';
 export { unwrapUserParamValues } from '../../sdk-v03/src/action/execution-params.js';
 export type { ActionRule } from '../../sdk-v03/src/action/types.js';
 export type {
-  ActorSnapshot,
+  ViaActorRecord,
   ViaActorSubject,
   ActorKeyState,
   ActorStatus,

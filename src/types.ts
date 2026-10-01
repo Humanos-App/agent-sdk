@@ -4,7 +4,7 @@
  * integrator programs against; any conforming platform (the agent2
  * mini-platform today, the real Humanos endpoints tomorrow) implements them.
  */
-import type { ActorSnapshot, ActionRule, RuleEvaluation, ViaEvent, ViaMandateCredential } from './sdk.js';
+import type { ActionRule, RuleEvaluation, ViaEvent, ViaMandateCredential } from './sdk.js';
 
 /** The verifier's answer to one presented tool call. */
 export interface VerifyOutcome {
@@ -61,8 +61,6 @@ export interface VerifyInput {
   stepUpSatisfied?: boolean;
   /** v0.3 §17.4 — an APPROVED step-up for exactly this call, by id; the verifier checks it against its record. */
   stepUpId?: string;
-  /** v0.3 §8 — the actor snapshot the agent PRESENTS; platforms default to their current. */
-  actorSnapshot?: ActorSnapshot;
   now?: Date;
 }
 

@@ -10,7 +10,19 @@
  * (P-A…P-E) drop in behind the same methods.
  */
 import { actionHash, cleanPublicJwk, jwkThumbprint } from './sdk.js';
-import type { ActorSnapshot, BoundKey, ChainAudit, ViaEvent, ViaMandateCredential } from './sdk.js';
+import type { BoundKey, ChainAudit, ViaActorSubject, ViaEvent, ViaMandateCredential } from './sdk.js';
+
+/**
+ * The mini-platform's (agent2) stored copy of an actor. agent2 prototypes the SIGNED-COPY design,
+ * which left v0.3 for v0.4 on 2026-10-01; this types what that mock returns, not a v0.3 artifact.
+ */
+export interface MockActorCopy {
+  subject: ViaActorSubject;
+  chain: { genesisEvent: string; headEvent: string; sequence: number };
+  supersedes: string | null;
+  validFrom: string;
+  validUntil?: string;
+}
 import { buildDelegatedPoP, type ViaAgentKey } from './key-provider.js';
 import type { CompiledLike, ExposurePolicy, ExtractedDraft, GuardVerifier, McpToolsList, VerifyOutcome } from './types.js';
 
@@ -38,7 +50,7 @@ export interface JoinResult {
   keyId: string;
   granted: { assurance: string; binding: string };
   degradedFrom?: string;
-  snapshot: ActorSnapshot;
+  snapshot: MockActorCopy;
 }
 
 export class MiniPlatformClient {
@@ -109,7 +121,7 @@ export class MiniPlatformClient {
   // ── v0.3 actor lifecycle (agent-side self-service) ─────────────────────────
 
   /** The actor's current snapshot + chain (what the dashboard also reads). */
-  actor(did: string): Promise<{ snapshot: ActorSnapshot; chain: ViaEvent[] }> {
+  actor(did: string): Promise<{ snapshot: MockActorCopy; chain: ViaEvent[] }> {
     return this.get(`/api/actor/${encodeURIComponent(did)}`);
   }
 
