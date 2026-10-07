@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { basename } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { softwareKey } from '../src/key-provider.js';
 import { evaluateRules, unwrapUserParamValues } from '../src/sdk.js';
@@ -67,6 +68,7 @@ const GMAIL_MANDATE = {
 
 function humanos(held = [SLACK_MANDATE, GMAIL_MANDATE]) {
   const declared: Record<string, unknown>[] = [];
+  const refuse = new Set<string>(); // services whose declarations the platform refuses
   const verified: Record<string, unknown>[] = [];
   const reported: Record<string, unknown>[] = [];
   const stepUps = new Map<string, { terms: string; status: 'pending' | 'approved' | 'declined' | 'consumed' }>();
@@ -76,7 +78,11 @@ function humanos(held = [SLACK_MANDATE, GMAIL_MANDATE]) {
     initialize: async () => ({ serverInfo: { name: 'humanos', version: '0' }, protocolVersion: '2025-06-18' }),
     listTools: async () => [],
     callTool: async (name, args = {}) => {
-      if (name === 'declare_tools') { declared.push(args); return answer({ recorded: (args.tools as unknown[]).length }); }
+      if (name === 'declare_tools') {
+        if ((args.services as string[]).some((s) => refuse.has(s))) return { text: 'declarations are refused', isError: true };
+        declared.push(args);
+        return answer({ recorded: (args.tools as unknown[]).length });
+      }
       if (name === 'get_mandate') return answer(held);
       if (name === 'challenge') return answer({ nonce: `n-${++n}`, aud: 'did:web:org', ttlMs: 60_000 });
       if (name === 'report_outcome') { reported.push(args); return answer({ recorded: { id: `urn:via:event:o-${reported.length}` } }); }
@@ -102,7 +108,7 @@ function humanos(held = [SLACK_MANDATE, GMAIL_MANDATE]) {
       return { text: `unknown tool ${name}`, isError: true };
     },
   };
-  return { client, declared, verified, reported, stepUps };
+  return { client, declared, refuse, verified, reported, stepUps };
 }
 
 async function setup(opts: { fail?: string[]; decorateCall?: ViaMcpProxyConfig['decorateCall'] } = {}) {
@@ -125,18 +131,19 @@ async function setup(opts: { fail?: string[]; decorateCall?: ViaMcpProxyConfig['
 }
 
 describe('the governing proxy — ViaGuard in front of MCP servers', () => {
-  it('merges the servers into one surface, prefixing only a name two services share, and declares it per service with the servers\' own annotations', async () => {
+  it('merges the servers into one surface, prefixing only a name two services share, and declares each service as its server describes it', async () => {
     const { proxy, h } = await setup();
     const list = (await proxy.handleRpc({ jsonrpc: '2.0', id: 1, method: 'tools/list' }))!.result as { tools: { name: string; annotations?: unknown }[] };
     expect(list.tools.map((t) => t.name)).toEqual(['slack_send_message', 'slack_search_users', 'slack_delete_message', 'slack_create_canvas', 'slack__search', 'send_message', 'gmail__search']);
     expect(list.tools.find((t) => t.name === 'slack_delete_message')!.annotations).toEqual({ destructiveHint: true });
-    expect(h.declared.map((d) => (d.tools as { service: string }[])[0]!.service)).toEqual(['Slack', 'Gmail']);
-    const gmailDeclared = h.declared[1]!.tools as { name: string; params: Record<string, unknown> }[];
-    expect(gmailDeclared.find((t) => t.name === 'send_message')!.params.to).toEqual({ type: 'array', items: 'string' });
-    // declared under the upstream's real name, not the prefixed one: rules speak of real names
-    expect(gmailDeclared.map((t) => t.name)).toContain('search');
-    const slackDeclared = h.declared[0]!.tools as { name: string; readOnlyHint?: boolean; destructiveHint?: boolean }[];
-    expect(slackDeclared.find((t) => t.name === 'slack_search_users')).toMatchObject({ readOnlyHint: true });
+    expect(h.declared.map((d) => d.services)).toEqual([['Slack'], ['Gmail']]);
+    const gmailDeclared = h.declared[1]!.tools as Record<string, unknown>[];
+    // the schema verbatim, never flattened, and the server it came from
+    expect(gmailDeclared.find((t) => t.name === 'send_message')).toEqual({ name: 'send_message', inputSchema: GMAIL[0]!.inputSchema, service: 'Gmail', server: { name: 'Gmail', version: '0' } });
+    // declared under the upstream's real name (rules speak of real names), with the name the agent calls it by
+    expect(gmailDeclared.find((t) => t.name === 'search')).toMatchObject({ calledAs: 'gmail__search' });
+    const slackDeclared = h.declared[0]!.tools as Record<string, unknown>[];
+    expect(slackDeclared.find((t) => t.name === 'slack_search_users')).toMatchObject({ description: 'Find people', annotations: { readOnlyHint: true } });
   });
 
   it('allow: the call reaches the server, and its outcome is reported', async () => {
@@ -229,6 +236,69 @@ describe('the governing proxy — ViaGuard in front of MCP servers', () => {
   });
 });
 
+// ── a proxy over Slack and part of Gmail, whose tool lists the tests change ──
+async function live() {
+  const slackTools = [...SLACK];
+  const gmailTools = [GMAIL[0]!]; // no name shared with Slack, yet
+  const h = humanos();
+  const proxy = await startViaMcpProxy({
+    upstreams: [await inProcessUpstream('Slack', standin('Slack', slackTools).handleRpc), await inProcessUpstream('Gmail', standin('Gmail', gmailTools).handleRpc)],
+    humanos: h.client,
+    agentKey: await softwareKey(),
+    did: 'did:web:humanos.tech:agent:proxy',
+  });
+  h.declared.length = 0; // what the start declared is the first test's business, not these
+  const names = async (): Promise<string[]> => ((await proxy.handleRpc({ jsonrpc: '2.0', id: 1, method: 'tools/list' }))!.result as { tools: { name: string }[] }).tools.map((t) => t.name);
+  return { proxy, slackTools, gmailTools, h, names };
+}
+const pin: UpstreamTool = { name: 'slack_pin', inputSchema: obj({ message_ts: { type: 'string' } }) };
+
+describe('refresh: the agent says its tools changed', () => {
+  it('declares again only the service whose tools changed, and nothing when none did', async () => {
+    const { proxy, slackTools, h } = await live();
+    slackTools.push(pin);
+
+    await proxy.refresh();
+    expect(h.declared.map((d) => d.services)).toEqual([['Slack']]);
+    expect(await proxy.refresh()).toEqual([]);
+    expect(h.declared).toHaveLength(1);
+  });
+
+  it('serves the new tools, and declares again a service whose tool now carries a prefix', async () => {
+    const { proxy, gmailTools, h, names } = await live();
+    gmailTools.push(GMAIL[1]!); // Gmail's search: Slack has one too
+
+    await proxy.refresh('Gmail');
+
+    expect(await names()).toEqual(expect.arrayContaining(['slack__search', 'gmail__search']));
+    expect(h.declared.map((d) => d.services)).toEqual([['Slack'], ['Gmail']]);
+    expect((h.declared[0]!.tools as Record<string, unknown>[]).find((t) => t.name === 'search')).toMatchObject({ calledAs: 'slack__search' });
+  });
+
+  it('declares a service whose server lists no tools any more with none, so Humanos marks them absent', async () => {
+    const { proxy, gmailTools, h } = await live();
+    gmailTools.length = 0;
+
+    await proxy.refresh();
+
+    expect(h.declared).toEqual([{ did: 'did:web:humanos.tech:agent:proxy', tools: [], services: ['Gmail'] }]);
+    expect(proxy.declared).toEqual({ services: ['Slack'], tools: SLACK.length });
+  });
+
+  it('a refused declaration leaves the new tools callable, and they are declared on the next refresh', async () => {
+    const { proxy, slackTools, h, names } = await live();
+    h.refuse.add('Slack');
+    slackTools.push(pin);
+
+    await expect(proxy.refresh()).rejects.toThrow(/declare_tools refused for Slack/);
+    expect(await names()).toContain('slack_pin');
+
+    h.refuse.clear();
+    await proxy.refresh();
+    expect(h.declared.map((d) => d.services)).toEqual([['Slack']]);
+  });
+});
+
 describe('mandate selection and parameter declaration', () => {
   const tool = (name: string, props: Record<string, unknown>) => ({ exposedName: name, upstreamName: name, service: 'S', upstream: {} as never, definition: { name, inputSchema: obj(props) } });
   const held = (id: string, userParams: Record<string, unknown>, executionParams: Record<string, unknown> | null) =>
@@ -265,6 +335,14 @@ describe('upstream over stdio', () => {
   });
 });
 
+describe('upstream over stdio: the server behind it', () => {
+  it('knows the server it reached by its command name, never its arguments', async () => {
+    const u = await connectUpstream({ service: 'Echo', command: process.execPath, args: [new URL('./fixtures/stdio-standin.mjs', import.meta.url).pathname] });
+    expect(u.server).toEqual({ transport: 'stdio', host: basename(process.execPath), name: 'standin', version: '0' });
+    await u.close();
+  });
+});
+
 describe('upstream over Streamable HTTP', () => {
   it('per-call headers and _meta reach the server; a header the transport or the credential set is never replaced', async () => {
     const calls: { headers: Record<string, unknown>; params: Record<string, unknown> }[] = [];
@@ -282,6 +360,8 @@ describe('upstream over Streamable HTTP', () => {
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
     try {
       const u = await connectUpstream({ service: 'H', url: `http://127.0.0.1:${(server.address() as AddressInfo).port}/mcp`, headers: { Authorization: 'Bearer upstream' } });
+      // the server by its host only: never the URL's path, query or the credential
+      expect(u.server).toEqual({ transport: 'http', host: '127.0.0.1', name: 'h', version: '0' });
       await u.callTool('echo', { text: 'hi' }, { meta: { 'test.example/decision': 'd-1' }, headers: { 'X-Decision': 'd-1', authorization: 'Bearer other', 'content-type': 'text/plain' } });
       await u.callTool('echo', { text: 'again' });
       expect(calls[0]!.headers).toMatchObject({ 'x-decision': 'd-1', authorization: 'Bearer upstream', 'content-type': 'application/json' });

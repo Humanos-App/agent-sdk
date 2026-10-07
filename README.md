@@ -19,7 +19,8 @@ For complete, runnable agents built on it, see
 | **`ViaGuard`** | the gate around every tool call: challenge → proof of possession → verify → run, refuse, or wait for the person's approval (step-up) → report the outcome |
 | **`createViaMcpClient`** | the Humanos connector, authenticated with the organization's API key and signing secret |
 | **`McpGuardVerifier`**, **`getMandates`** | the connector as the guard's verifier, and "which mandates do I hold?" |
-| **`startViaMcpProxy`** | a governing proxy in front of MCP servers you did not write |
+| **`startViaMcpProxy`** | a governing proxy in front of MCP servers you did not write; `refresh()` declares their new tools |
+| **`declareTools`** | tell Humanos which tools an agent can call, each as its server describes it, one call per service |
 | **`startViaMcpServer`** | expose a guarded agent's tools to an MCP host |
 | **`extractFromToolsList`**, **`importActionDraft`** | turn an existing tool surface into a draft action for the organization |
 | **`@humanos/agent-sdk/testing`** | `createTestVerifier`: an in-process verifier for testing an agent offline |
@@ -69,6 +70,34 @@ try {
   else throw e;
 }
 ```
+
+## Govern MCP servers you did not write
+
+```ts
+import { createStdioTransport, startViaMcpProxy, connectUpstream, declareTools } from '@humanos/agent-sdk';
+
+const proxy = await startViaMcpProxy({
+  upstreams: [await connectUpstream({ service: 'Slack', url: 'https://mcp.slack.com/mcp', headers: { Authorization: `Bearer ${slackToken}` } })],
+  humanos: client,
+  agentKey,
+  did,
+});
+createStdioTransport().run(proxy);
+
+// Declaring new tools is the agent's job: when a server's tools change, say so.
+await proxy.refresh('Slack');
+
+// An agent that stops using a service: Humanos keeps its tools, marked no longer declared.
+await declareTools(client, did, [], { emptyServices: ['Files'] });
+```
+
+At start, and on each `refresh`, every tool is declared to Humanos as its server describes it:
+schemas, annotations and the server it comes from, never cut by the SDK (Humanos caps long text
+itself, the same way for every agent). A `refresh` declares again only the services whose tools
+changed. A service is declared in one call of at most 500 tools; past that, and when the agent
+reaches its tool limit, the proxy warns (`onWarning`, stderr by default). This needs a Humanos
+platform that takes full tool definitions: an earlier one refuses descriptions over 1,000
+characters.
 
 ## Test without a platform
 

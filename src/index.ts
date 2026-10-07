@@ -47,7 +47,12 @@ export { createStdioTransport } from './mcp/stdio.js';
 export { startViaMcpProxy, pickMandate, declaredParams, ViaStepUpPendingError } from './mcp/proxy.js';
 export type { ViaMcpProxyConfig, ViaMcpProxy, ProxiedTool } from './mcp/proxy.js';
 export { connectUpstream, inProcessUpstream } from './mcp/upstream.js';
-export type { Upstream, UpstreamSpec, UpstreamTool, UpstreamResult, UpstreamCallExtra } from './mcp/upstream.js';
+export type { Upstream, UpstreamSpec, UpstreamServer, UpstreamTool, UpstreamResult, UpstreamCallExtra } from './mcp/upstream.js';
+
+// Declaring tools — any agent's, not only the proxy's: each tool as its server describes it, one
+// call per service.
+export { declareTools, DECLARE_TOOLS_MAX } from './mcp/declare.js';
+export type { DeclaredTool, DeclareToolsOptions, ServiceDeclaration } from './mcp/declare.js';
 export type { StepUpRef } from './types.js';
 
 // EXTRACTION — parse an already-built agent's tool surface into a VIAAction draft. Params and
