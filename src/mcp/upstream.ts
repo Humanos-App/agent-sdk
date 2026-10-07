@@ -10,19 +10,42 @@
  *   • in-process — a `handleRpc`, for stand-ins and tests.
  *
  * Node built-ins only, like the rest of this package. Server→client requests (sampling,
- * elicitation) are not passed through yet: an upstream that sends one gets no answer.
+ * elicitation) are not passed through yet: an upstream that sends one gets no answer. Of the
+ * server's notifications, a local server's `notifications/tools/list_changed` is heard
+ * (`onToolsChanged`); a remote server's is not, since it only arrives on an event stream this
+ * client does not open.
  */
 import { spawn } from 'node:child_process';
+import { basename } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { JsonRpcMessage } from './server.js';
 
 export interface UpstreamTool {
   name: string;
+  title?: string;
   description?: string;
   inputSchema: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
   /** MCP tool annotations — hints from the server, not guarantees. */
   annotations?: { title?: string; readOnlyHint?: boolean; destructiveHint?: boolean; idempotentHint?: boolean; openWorldHint?: boolean };
 }
+
+/**
+ * The MCP server behind an upstream: what it says it is (`initialize`), and how it is reached.
+ * Never a URL path, arguments, environment or headers: those can hold credentials.
+ */
+export interface UpstreamServer {
+  name?: string;
+  version?: string;
+  title?: string;
+  /** `stdio` for a local server, `http` for a remote one; absent for an in-process one. */
+  transport?: 'stdio' | 'http';
+  /** A remote server's host (`mcp.slack.com`), or a local server's command name (`npx`). */
+  host?: string;
+}
+
+/** What a server sends when its tool list changed. */
+export const TOOLS_CHANGED = 'notifications/tools/list_changed';
 
 export interface UpstreamResult {
   content: { type: string; text?: string; [k: string]: unknown }[];
@@ -44,8 +67,15 @@ export interface UpstreamCallExtra {
 export interface Upstream {
   /** The service this server is, as the organization will see it grouped: "Slack", "Gmail". */
   readonly service: string;
+  /** The server behind it, once the handshake is done. Optional for upstreams written by hand. */
+  readonly server?: UpstreamServer;
   listTools(): Promise<UpstreamTool[]>;
   callTool(name: string, args: Record<string, unknown>, extra?: UpstreamCallExtra): Promise<UpstreamResult>;
+  /**
+   * Run `listener` whenever the server says its tool list changed; returns the unsubscribe. Local
+   * servers only (stdio, in-process): absent, or never called, for a remote one.
+   */
+  onToolsChanged?(listener: () => void): () => void;
   close(): Promise<void>;
 }
 
@@ -69,8 +99,13 @@ const CLIENT_INFO = { name: 'via-proxy', version: '0.1.0' };
 /** `headers` are per request and only an HTTP transport has anywhere to put them. */
 type Send = (msg: JsonRpcMessage, headers?: Record<string, string>) => Promise<JsonRpcMessage | null>;
 
-function session(service: string, send: Send, notify: (msg: JsonRpcMessage) => Promise<void>, close: () => Promise<void>): Upstream & { init(): Promise<void> } {
+/** A session, and what its transport reports into it: a notification the server sent. */
+type Session = Upstream & { init(): Promise<void>; received(msg: JsonRpcMessage): void };
+
+function session(service: string, reached: Pick<UpstreamServer, 'transport' | 'host'>, send: Send, notify: (msg: JsonRpcMessage) => Promise<void>, close: () => Promise<void>): Session {
   let seq = 0;
+  const server: UpstreamServer = { ...reached };
+  const listeners = new Set<() => void>();
   const rpc = async (method: string, params?: Record<string, unknown>, headers?: Record<string, string>): Promise<Record<string, unknown>> => {
     const resp = await send({ jsonrpc: '2.0', id: `${service}-${++seq}`, method, ...(params ? { params } : {}) }, headers);
     if (!resp) throw new Error(`upstream ${service}: no response to ${method}`);
@@ -79,9 +114,19 @@ function session(service: string, send: Send, notify: (msg: JsonRpcMessage) => P
   };
   return {
     service,
+    server,
     async init() {
-      await rpc('initialize', { protocolVersion: PROTOCOL, capabilities: {}, clientInfo: CLIENT_INFO });
+      const r = await rpc('initialize', { protocolVersion: PROTOCOL, capabilities: {}, clientInfo: CLIENT_INFO });
+      Object.assign(server, serverInfoOf(r.serverInfo));
       await notify({ jsonrpc: '2.0', method: 'notifications/initialized' });
+    },
+    received(msg) {
+      if (msg.method !== TOOLS_CHANGED) return;
+      for (const listener of listeners) listener();
+    },
+    onToolsChanged(listener) {
+      listeners.add(listener);
+      return () => void listeners.delete(listener);
     },
     async listTools() {
       const out: UpstreamTool[] = [];
@@ -107,9 +152,18 @@ function session(service: string, send: Send, notify: (msg: JsonRpcMessage) => P
   };
 }
 
-/** An upstream in this process: a `handleRpc` (a stand-in, or a server under test). */
-export async function inProcessUpstream(service: string, handleRpc: (msg: JsonRpcMessage) => Promise<JsonRpcMessage | null>): Promise<Upstream> {
-  const s = session(service, handleRpc, async (m) => { await handleRpc(m); }, async () => {});
+/**
+ * An upstream in this process: a `handleRpc` (a stand-in, or a server under test). `notifications`
+ * hands the server a way to notify, as a stdio server would by writing a line: a test's server
+ * calls it with `notifications/tools/list_changed`.
+ */
+export async function inProcessUpstream(
+  service: string,
+  handleRpc: (msg: JsonRpcMessage) => Promise<JsonRpcMessage | null>,
+  notifications?: (notify: (msg: JsonRpcMessage) => void) => void,
+): Promise<Upstream> {
+  const s = session(service, {}, handleRpc, async (m) => { await handleRpc(m); }, async () => {});
+  notifications?.((m) => s.received(m));
   await s.init();
   return s;
 }
@@ -133,6 +187,7 @@ async function stdioUpstream(spec: UpstreamSpec): Promise<Upstream> {
       pending.delete(id);
     }
   };
+  let s: Session | undefined;
   child.on('error', (e) => fail(new Error(`upstream ${spec.service}: ${e.message}`)));
   child.on('exit', (code, signal) => fail(new Error(`upstream ${spec.service} exited (${signal ?? code})`)));
   createInterface({ input: child.stdout }).on('line', (line) => {
@@ -144,7 +199,8 @@ async function stdioUpstream(spec: UpstreamSpec): Promise<Upstream> {
     } catch {
       return; // a server that logs to stdout: ignore what is not JSON-RPC
     }
-    if (msg.method !== undefined || msg.id == null) return; // server→client request or notification: not passed through yet
+    if (msg.method !== undefined && msg.id == null) return void s?.received(msg); // a notification
+    if (msg.method !== undefined || msg.id == null) return; // a server→client request: not passed through yet
     const p = pending.get(String(msg.id));
     if (!p) return;
     clearTimeout(p.timer);
@@ -171,7 +227,7 @@ async function stdioUpstream(spec: UpstreamSpec): Promise<Upstream> {
         reject(e as Error);
       }
     });
-  const s = session(spec.service, send, async (m) => write(m), async () => {
+  s = session(spec.service, { transport: 'stdio', host: basename(spec.command!) }, send, async (m) => write(m), async () => {
     child.stdin.end();
     child.kill();
   });
@@ -218,7 +274,15 @@ async function httpUpstream(spec: UpstreamSpec): Promise<Upstream> {
     }
     return JSON.parse(text) as JsonRpcMessage;
   };
-  const s = session(spec.service, post, async (m) => { await post(m); }, async () => {});
+  const s = session(spec.service, { transport: 'http', host: new URL(spec.url!).hostname }, post, async (m) => { await post(m); }, async () => {});
   await s.init();
   return s;
+}
+
+/** The server's own `serverInfo`: its name, version and title, the ones that are strings. */
+function serverInfoOf(info: unknown): Pick<UpstreamServer, 'name' | 'version' | 'title'> {
+  const i = (info && typeof info === 'object' ? info : {}) as Record<string, unknown>;
+  const out: Pick<UpstreamServer, 'name' | 'version' | 'title'> = {};
+  for (const k of ['name', 'version', 'title'] as const) if (typeof i[k] === 'string' && i[k]) out[k] = i[k] as string;
+  return out;
 }

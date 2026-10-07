@@ -21,7 +21,7 @@ import { createHmac } from 'node:crypto';
 import type { McpTool } from '../types.js';
 
 /** Sent as `clientInfo.version`; keep in step with package.json. */
-export const SDK_VERSION = '0.1.2';
+export const SDK_VERSION = '0.2.0';
 
 export interface ViaMcpClientOptions {
   /** Full endpoint, e.g. `https://mcp.humanos.tech/mcp`. */

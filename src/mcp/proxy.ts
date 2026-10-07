@@ -10,9 +10,12 @@
  * call is BLOCKED, not advised (plan §9 item 5, for agents we build).
  *
  * At start: the servers' tools are merged into one surface (a name two servers share is prefixed
- * with the service), declared to Humanos with the service and the servers' OWN annotations — so
- * the Tools tab fills itself with facts, not with what a model chose to say — and the mandates
- * this actor holds are fetched. Per call: the mandate is picked (the person's `allowed_tools`
+ * with the service), declared to Humanos as the servers describe them, verbatim (`declareTools`) —
+ * so the Tools tab fills itself with facts, not with what a model chose to say — and the mandates
+ * this actor holds are fetched. The surface can change while the proxy runs: `refresh`,
+ * `addUpstream` and `removeUpstream`, and a local server that says its tools changed. Each change
+ * declares again only the services whose declaration changed, and tells the agent (`notify`) when
+ * the tools it sees changed. Per call: the mandate is picked (the person's `allowed_tools`
  * naming the tool, else a pinned action declaring every parameter the tool takes, else a plain
  * authorization), a guard per mandate verifies, the outcome is reported. A call that needs the
  * person's co-sign returns the approve link at once — an MCP tool call must not hang for minutes —
@@ -23,9 +26,10 @@ import type { ViaAgentKey } from '../key-provider.js';
 import { unwrapUserParamValues } from '../sdk.js';
 import type { StepUpRef, VerifyOutcome } from '../types.js';
 import type { ViaMcpClient } from './client.js';
+import { declareTools, type DeclaredTool, type ServiceDeclaration } from './declare.js';
 import { McpGuardVerifier, getMandates } from './guard-verifier.js';
 import { defaultPlainReason, type JsonRpcMessage } from './server.js';
-import type { Upstream, UpstreamCallExtra, UpstreamResult, UpstreamTool } from './upstream.js';
+import { connectUpstream, TOOLS_CHANGED, type Upstream, type UpstreamCallExtra, type UpstreamResult, type UpstreamSpec, type UpstreamTool } from './upstream.js';
 
 type Held = Awaited<ReturnType<typeof getMandates>>[number];
 
@@ -47,8 +51,15 @@ export interface ViaMcpProxyConfig {
   /** The proxy's own key — it is the agent actor — and the DID it registered under. */
   agentKey: ViaAgentKey;
   did: string;
-  /** Declare the merged surface to Humanos at start (default true). */
+  /** Declare the merged surface to Humanos at start, and again whenever it changes (default true). */
   declare?: boolean;
+  /**
+   * How the proxy tells its agent that the tools it sees changed (`notifications/tools/list_changed`):
+   * the stdio transport's `notify`. Without it the proxy tells the agent its list never changes.
+   */
+  notify?: (msg: JsonRpcMessage) => void;
+  /** Where a declaration's warnings go: a service over the limit, tools left out or cut. Default: stderr. */
+  onWarning?: (message: string) => void;
   /** `observe` records denials and runs the tool anyway (the adoption ramp); default `enforce`. */
   mode?: 'observe' | 'enforce';
   /** Override which held mandate a call runs under. */
@@ -79,10 +90,21 @@ export interface ViaMcpProxyConfig {
 
 export interface ViaMcpProxy {
   did: string;
-  tools: ProxiedTool[];
+  /** The merged surface, as it is now. */
+  readonly tools: ProxiedTool[];
   handleRpc: (msg: JsonRpcMessage) => Promise<JsonRpcMessage | null>;
-  /** What was declared to Humanos at start, per service. */
-  declared: { services: string[]; tools: number } | null;
+  /** What is declared to Humanos now; null with `declare: false`. */
+  readonly declared: { services: string[]; tools: number } | null;
+  /**
+   * List the servers' tools again (one service's, or all of them) and declare each service whose
+   * declaration changed. A local server that says its tools changed does this by itself; a remote
+   * one's changes arrive only through this.
+   */
+  refresh(service?: string): Promise<ServiceDeclaration[]>;
+  /** Put another server behind the proxy (connected, or by command or URL), and declare its tools. */
+  addUpstream(upstream: Upstream | UpstreamSpec): Promise<ServiceDeclaration[]>;
+  /** Take a service's servers away: closed, and the service declared with no tools, so Humanos marks them absent. */
+  removeUpstream(service: string): Promise<ServiceDeclaration[]>;
   refreshMandates(): Promise<Held[]>;
   close(): Promise<void>;
 }
@@ -108,7 +130,13 @@ const stable = (v: unknown): string =>
   JSON.stringify(v, (_k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b))) : x));
 const text = (t: string, isError = false): Record<string, unknown> => ({ content: [{ type: 'text', text: t }], ...(isError ? { isError: true } : {}) });
 
-/** JSON Schema → the flat parameter shape Humanos declares: type, description, required, and a list's element type. */
+/**
+ * JSON Schema → the flat parameter shape agent-sdk 0.1 declared: type, description, required, and a
+ * list's element type.
+ *
+ * @deprecated The proxy declares each tool's schema verbatim now (`declareTools`); Humanos still
+ * accepts this shape.
+ */
 export function declaredParams(schema: Record<string, unknown> | undefined): Record<string, { type: string; description?: string; required?: boolean; items?: string }> {
   const props = ((schema ?? {}).properties ?? {}) as Record<string, { type?: unknown; description?: unknown; items?: { type?: unknown } }>;
   const required = new Set(Array.isArray((schema ?? {}).required) ? ((schema as { required: string[] }).required) : []);
@@ -158,41 +186,135 @@ export async function startViaMcpProxy(cfg: ViaMcpProxyConfig): Promise<ViaMcpPr
   const plainReason = cfg.plainReason ?? defaultPlainReason;
   const verifier = new McpGuardVerifier(cfg.humanos);
   const pick = cfg.mandateFor ?? pickMandate;
+  const warn = cfg.onWarning ?? ((m: string) => void process.stderr.write(`via-proxy: ${m}\n`));
 
-  // ── the merged surface ──
-  const listed = await Promise.all(cfg.upstreams.map(async (u) => ({ u, tools: await u.listTools() })));
-  const seen = new Map<string, number>();
-  for (const { tools: ts } of listed) for (const t of ts) seen.set(t.name, (seen.get(t.name) ?? 0) + 1);
-  const tools: ProxiedTool[] = [];
-  for (const { u, tools: ts } of listed) {
-    for (const t of ts) {
-      tools.push({ exposedName: (seen.get(t.name) ?? 0) > 1 ? `${slug(u.service)}__${t.name}` : t.name, upstreamName: t.name, service: u.service, upstream: u, definition: t });
-    }
-  }
-  const byName = new Map(tools.map((t) => [t.exposedName, t]));
-  const services = [...new Set(tools.map((t) => t.service))];
+  // ── the merged surface: every server's tools, as last listed ──
+  const upstreams: Upstream[] = [...cfg.upstreams];
+  const listed = new Map<Upstream, UpstreamTool[]>();
+  let tools: ProxiedTool[] = [];
+  let byName = new Map<string, ProxiedTool>();
+  const merge = (): void => {
+    const seen = new Map<string, number>();
+    for (const ts of listed.values()) for (const t of ts) seen.set(t.name, (seen.get(t.name) ?? 0) + 1);
+    tools = upstreams.flatMap((u) =>
+      (listed.get(u) ?? []).map((t) => ({ exposedName: (seen.get(t.name) ?? 0) > 1 ? `${slug(u.service)}__${t.name}` : t.name, upstreamName: t.name, service: u.service, upstream: u, definition: t })),
+    );
+    byName = new Map(tools.map((t) => [t.exposedName, t]));
+  };
 
-  // ── declare it: one call per service, so each replaces only its own list ──
-  let declared: ViaMcpProxy['declared'] = null;
-  if (cfg.declare !== false) {
+  // ── declared: per service, what Humanos was last told, so a change re-declares only what changed ──
+  const declaredAs = new Map<string, string>();
+  const declarationOf = (service: string): DeclaredTool[] =>
+    tools
+      .filter((t) => t.service === service)
+      .map((t) => ({
+        name: t.upstreamName,
+        title: t.definition.title,
+        description: t.definition.description,
+        inputSchema: t.definition.inputSchema,
+        outputSchema: t.definition.outputSchema,
+        annotations: t.definition.annotations,
+        service,
+        ...(t.exposedName !== t.upstreamName ? { calledAs: t.exposedName } : {}),
+        ...(t.upstream.server ? { server: t.upstream.server } : {}),
+      }));
+  const declareChanged = async (): Promise<ServiceDeclaration[]> => {
+    if (cfg.declare === false) return [];
+    const services = [...new Set(tools.map((t) => t.service))];
+    const out: ServiceDeclaration[] = [];
+    // Service by service, each remembered once it is declared: if one is refused, the ones before
+    // it stand and the rest are declared on the next change.
     for (const service of services) {
-      const ts = tools.filter((t) => t.service === service);
-      if (ts.length > 200) process.stderr.write(`via-proxy: ${service} has ${ts.length} tools; the first 200 are declared\n`);
-      const r = await cfg.humanos.callTool('declare_tools', {
-        did: cfg.did,
-        tools: ts.slice(0, 200).map((t) => ({
-          name: t.upstreamName,
-          ...(t.definition.description ? { description: t.definition.description.slice(0, 1000) } : {}),
-          service,
-          params: declaredParams(t.definition.inputSchema),
-          ...(typeof t.definition.annotations?.readOnlyHint === 'boolean' ? { readOnlyHint: t.definition.annotations.readOnlyHint } : {}),
-          ...(typeof t.definition.annotations?.destructiveHint === 'boolean' ? { destructiveHint: t.definition.annotations.destructiveHint } : {}),
-        })),
-      });
-      if (r.isError) throw new Error(`declare_tools refused for ${service}: ${r.text}`);
+      const declaration = declarationOf(service);
+      if (declaredAs.get(service) === stable(declaration)) continue;
+      out.push(...(await declareTools(cfg.humanos, cfg.did, declaration, { onWarning: warn })));
+      declaredAs.set(service, stable(declaration));
     }
-    declared = { services, tools: tools.length };
-  }
+    // A service with no tools left (its servers removed, or listing none) says so: Humanos marks them absent.
+    for (const service of [...declaredAs.keys()].filter((s) => !services.includes(s))) {
+      out.push(...(await declareTools(cfg.humanos, cfg.did, [], { emptyServices: [service], onWarning: warn })));
+      declaredAs.delete(service);
+    }
+    return out;
+  };
+
+  const listEntry = (t: ProxiedTool): Record<string, unknown> => ({
+    name: t.exposedName,
+    ...(t.definition.title ? { title: t.definition.title } : {}),
+    ...(t.definition.description ? { description: t.definition.description } : {}),
+    inputSchema: t.definition.inputSchema,
+    ...(t.definition.outputSchema ? { outputSchema: t.definition.outputSchema } : {}),
+    ...(t.definition.annotations ? { annotations: t.definition.annotations } : {}),
+  });
+
+  // ── changes to the surface: one at a time, in order, so two never interleave their declarations ──
+  let queue: Promise<unknown> = Promise.resolve();
+  const change = (work: () => Promise<void>): Promise<ServiceDeclaration[]> => {
+    const run = queue.then(async () => {
+      const before = stable(tools.map(listEntry));
+      await work();
+      merge();
+      // The agent hears first: the new tools are callable (and guarded) even if declaring them fails.
+      if (cfg.notify && stable(tools.map(listEntry)) !== before) cfg.notify({ jsonrpc: '2.0', method: TOOLS_CHANGED });
+      return declareChanged();
+    });
+    queue = run.catch(() => undefined);
+    return run;
+  };
+
+  const refreshing = new Set<string>();
+  const unwatch = new Map<Upstream, () => void>();
+  const refresh = (service?: string): Promise<ServiceDeclaration[]> =>
+    change(async () => {
+      if (service === undefined) refreshing.clear();
+      else refreshing.delete(service);
+      const targets = upstreams.filter((u) => service === undefined || u.service === service);
+      const lists = await Promise.all(targets.map((u) => u.listTools()));
+      targets.forEach((u, i) => listed.set(u, lists[i]!));
+    });
+  const watch = (u: Upstream): void => {
+    const off = u.onToolsChanged?.(() => {
+      // A burst of notifications is one refresh: a service already waiting for one is not queued again.
+      if (refreshing.has(u.service)) return;
+      refreshing.add(u.service);
+      refresh(u.service).catch((e) => warn(`${u.service} changed its tools, and declaring them failed: ${e instanceof Error ? e.message : String(e)}`));
+    });
+    if (off) unwatch.set(u, off);
+  };
+
+  const addUpstream = (given: Upstream | UpstreamSpec): Promise<ServiceDeclaration[]> =>
+    change(async () => {
+      const connected = typeof (given as Upstream).listTools !== 'function';
+      const u = connected ? await connectUpstream(given as UpstreamSpec) : (given as Upstream);
+      try {
+        listed.set(u, await u.listTools());
+      } catch (e) {
+        if (connected) await u.close();
+        throw e;
+      }
+      upstreams.push(u);
+      watch(u);
+    });
+
+  const removeUpstream = (service: string): Promise<ServiceDeclaration[]> =>
+    change(async () => {
+      const leaving = upstreams.filter((u) => u.service === service);
+      for (const u of leaving) {
+        unwatch.get(u)?.();
+        unwatch.delete(u);
+        listed.delete(u);
+        upstreams.splice(upstreams.indexOf(u), 1);
+      }
+      await Promise.all(leaving.map((u) => u.close()));
+    });
+
+  // ── at start: list, merge, declare (a refusal here stops the start), then listen for changes ──
+  const initial = await Promise.all(upstreams.map((u) => u.listTools()));
+  upstreams.forEach((u, i) => listed.set(u, initial[i]!));
+  merge();
+  const services = [...new Set(tools.map((t) => t.service))];
+  await declareChanged();
+  upstreams.forEach(watch);
 
   // ── the mandates this actor holds ──
   let held: Held[] = [];
@@ -287,7 +409,7 @@ export async function startViaMcpProxy(cfg: ViaMcpProxyConfig): Promise<ViaMcpPr
       case 'initialize':
         return reply({
           protocolVersion: (params?.protocolVersion as string) ?? '2025-06-18',
-          capabilities: { tools: { listChanged: false } },
+          capabilities: { tools: { listChanged: cfg.notify !== undefined } },
           serverInfo: cfg.serverInfo ?? { name: 'via-proxy', version: '0.1.0' },
           instructions,
         });
@@ -297,14 +419,7 @@ export async function startViaMcpProxy(cfg: ViaMcpProxyConfig): Promise<ViaMcpPr
       case 'ping':
         return reply({});
       case 'tools/list':
-        return reply({
-          tools: tools.map((t) => ({
-            name: t.exposedName,
-            ...(t.definition.description ? { description: t.definition.description } : {}),
-            inputSchema: t.definition.inputSchema,
-            ...(t.definition.annotations ? { annotations: t.definition.annotations } : {}),
-          })),
-        });
+        return reply({ tools: tools.map(listEntry) });
       case 'resources/list':
         return reply({ resources: [] });
       case 'prompts/list':
@@ -318,12 +433,22 @@ export async function startViaMcpProxy(cfg: ViaMcpProxyConfig): Promise<ViaMcpPr
 
   return {
     did: cfg.did,
-    tools,
+    get tools() {
+      return tools;
+    },
     handleRpc,
-    declared,
+    get declared() {
+      if (cfg.declare === false) return null;
+      return { services: [...declaredAs.keys()], tools: tools.filter((t) => declaredAs.has(t.service)).length };
+    },
+    refresh,
+    addUpstream,
+    removeUpstream,
     refreshMandates,
     close: async () => {
-      await Promise.all(cfg.upstreams.map((u) => u.close()));
+      for (const off of unwatch.values()) off();
+      unwatch.clear();
+      await Promise.all(upstreams.map((u) => u.close()));
     },
   };
 }
