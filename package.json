@@ -1,6 +1,6 @@
 {
   "name": "@humanos/agent-sdk",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "Humanos Agent SDK — put an AI agent under a mandate: its own key and proof of possession, the ViaGuard that verifies every tool call before it runs, the Humanos connector client, and an MCP server and governing proxy. The VIA protocol is @humanos/via-sdk-v03.",
@@ -23,12 +23,11 @@
   ],
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
-    "prepack": "npm run build",
+    "prepare": "npm run build",
     "check-types": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "vendor:sdk-v03": "sh scripts/vendor-sdk-v03.sh",
-    "pack:agent-kit": "sh scripts/pack-agent-kit.sh"
+    "vendor:sdk-v03": "sh scripts/vendor-sdk-v03.sh"
   },
   "peerDependencies": {
     "@humanos/via-sdk-v03": "^0.3.0"
@@ -39,5 +38,5 @@
     "typescript": "^5.9.3",
     "vitest": "^4.1.9"
   },
-  "//boundary": "The protocol is the PACKAGE @humanos/via-sdk-v03 — a peer, so an agent that also verifies things itself shares one copy. It is not on a registry yet, so this repo installs it for development from vendor/ (refresh with `npm run vendor:sdk-v03` inside the via-protocol checkout). Consumers get dist/ via `exports`."
+  "//boundary": "The protocol is the PACKAGE @humanos/via-sdk-v03 — a peer, so an agent that also verifies things itself shares one copy. It is not on a registry yet: this repo carries it in vendor/ (refresh with `npm run vendor:sdk-v03` inside the via-protocol checkout), and projects install it from there by URL (see README). `prepare` builds dist/ wherever the package is installed from git; consumers get dist/ via `exports`."
 }

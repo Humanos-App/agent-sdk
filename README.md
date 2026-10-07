@@ -24,6 +24,22 @@ For complete, runnable agents built on it, see
 | **`extractFromToolsList`**, **`importActionDraft`** | turn an existing tool surface into a draft action for the organization |
 | **`@humanos/agent-sdk/testing`** | `createTestVerifier`: an in-process verifier for testing an agent offline |
 
+## Install
+
+Neither package is on a registry yet. Install both from this repository, pinned to a release tag:
+
+```json
+{
+  "dependencies": {
+    "@humanos/agent-sdk": "github:Humanos-App/agent-sdk#v0.1.2",
+    "@humanos/via-sdk-v03": "https://raw.githubusercontent.com/Humanos-App/agent-sdk/v0.1.2/vendor/humanos-via-sdk-v03-0.3.0.tgz"
+  }
+}
+```
+
+npm clones the tagged commit and builds it (`prepare`), so a first install takes a few seconds
+longer than a registry package. Requires Node.js 20 or later and `git`.
+
 ## Use
 
 ```ts
@@ -81,4 +97,8 @@ npm test
 npm run build     # dist/: ES modules + type declarations
 ```
 
-`@humanos/via-sdk-v03` is not on a registry yet; development installs it from `vendor/`.
+`npm ci` also builds `dist/` (`prepare`). `@humanos/via-sdk-v03` is not on a registry yet;
+development installs it from `vendor/`, and that tarball is the copy projects install by URL.
+
+To release: bump `version` in `package.json` and `SDK_VERSION` in `src/mcp/client.ts` (a test
+holds them equal), update the tag in the Install snippet above, then tag the commit `v<version>`.

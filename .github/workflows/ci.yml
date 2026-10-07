@@ -16,8 +16,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-      # `npm ci` fails when package-lock.json and the vendored tarball disagree.
+      # `npm ci` fails when package-lock.json and the vendored tarball disagree. It also runs
+      # `prepare`, which builds dist/ — the same step a project installing from git depends on.
       - run: npm ci
+      - run: test -f dist/index.js && test -f dist/testing.js
       - run: npm run check-types
       - run: npm test
-      - run: npm run build
