@@ -19,6 +19,7 @@ function stubFetch(reply: unknown, init: { status?: number; headers?: Record<str
       status: init.status ?? 200,
       headers: { get: (k: string) => init.headers?.[k.toLowerCase()] ?? null },
       json: async () => reply,
+      text: async () => JSON.stringify(reply),
     };
   }) as unknown as typeof fetch;
   return { impl, seen };
@@ -98,5 +99,48 @@ describe('the VIA MCP client — journey A4', () => {
       // The challenge names where to authenticate — the only useful thing in an empty refusal.
       expect(err.message).toContain('resource_metadata');
     });
+  });
+});
+
+// Ported from agent-kit (Rodrigo, 2026-10-06, b59705b), where it first shipped only inside the
+// vendored 0.1.1 tarball: the response body is the only thing that tells these failures apart.
+describe('the VIA MCP client — HTTP errors carry the server\'s reason', () => {
+  const answering = (status: number, body: unknown, headers: Record<string, string> = {}) =>
+    createViaMcpClient({
+      url: 'https://connector.test/mcp',
+      apiKey: 'key',
+      signatureSecret: 'secret',
+      fetchImpl: async () => new Response(typeof body === 'string' ? body : JSON.stringify(body), { status, headers }),
+    });
+
+  it('a signature refusal carries the connector\'s words, the status and the body', async () => {
+    const body = { message: 'Invalid signature', error: 'Unauthorized', statusCode: 401 };
+    const error = await answering(401, body).listTools().catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ViaMcpAuthError);
+    expect(error).toMatchObject({ status: 401, body, message: 'credential refused (HTTP 401): Invalid signature' });
+  });
+
+  it('a token refusal carries the OAuth description and the challenge', async () => {
+    const challenge = 'Bearer error="invalid_token", resource_metadata="https://connector.test/.well-known/oauth-protected-resource"';
+    const body = { error: 'invalid_token', error_description: 'invalid token' };
+    const error = await answering(401, body, { 'WWW-Authenticate': challenge }).listTools().catch((e: unknown) => e);
+    expect(error).toMatchObject({ status: 401, body, message: `credential refused (HTTP 401): invalid token [${challenge}]` });
+  });
+
+  it('any other HTTP failure names the server\'s reason', async () => {
+    await expect(answering(500, { jsonrpc: '2.0', id: 1, error: { code: -32603, message: 'boom' } }).listTools()).rejects.toThrow(
+      'MCP request failed: HTTP 500: boom',
+    );
+    await expect(answering(502, '<html>\n  Bad Gateway\n</html>').listTools()).rejects.toThrow('MCP request failed: HTTP 502: <html> Bad Gateway </html>');
+  });
+});
+
+describe('the VIA MCP client — identifies itself', () => {
+  it('reports the package version as clientInfo.version', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const { SDK_VERSION } = await import('../src/mcp/client.js');
+    const pkg = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'package.json'), 'utf8')) as { version: string };
+    expect(SDK_VERSION).toBe(pkg.version);
   });
 });

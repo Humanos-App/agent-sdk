@@ -43,7 +43,13 @@ export interface GuardOptions {
   now?: () => Date;
 }
 
-type ToolFn = (args: Record<string, unknown>) => unknown | Promise<unknown>;
+/** What the guard hands a tool when it runs it: the decision the call runs under. */
+export interface GuardCallContext {
+  /** The verifier's answer for THIS call — an `allow`, or the `deny` a tool runs past under `observe`. */
+  outcome: VerifyOutcome;
+}
+
+type ToolFn = (args: Record<string, unknown>, ctx: GuardCallContext) => unknown | Promise<unknown>;
 
 /**
  * The runtime interceptor (PRD §5.3). Per guarded call, all spec mechanics
@@ -130,7 +136,7 @@ export class ViaGuard {
       return {
         decision: 'allow',
         evaluations: outcome.evaluations,
-        result: await this.execute<T>(args, impl, decisionId),
+        result: await this.execute<T>(args, impl, decisionId, outcome),
       };
     }
     if (this.mode === 'observe') {
@@ -141,7 +147,7 @@ export class ViaGuard {
         reason: outcome.reason,
         evaluations: outcome.evaluations,
         observed: true,
-        result: await this.execute<T>(args, impl, decisionId),
+        result: await this.execute<T>(args, impl, decisionId, outcome),
       };
     }
     throw new ViaDeniedError(outcome.reason, outcome.evaluations);
@@ -155,9 +161,9 @@ export class ViaGuard {
    * execution and report leaves a decision event with no outcome — the visible
    * gap two-phase exists to expose.
    */
-  private async execute<T>(args: Record<string, unknown>, impl: ToolFn, decisionId?: string): Promise<T> {
+  private async execute<T>(args: Record<string, unknown>, impl: ToolFn, decisionId: string | undefined, outcome: VerifyOutcome): Promise<T> {
     try {
-      const result = (await impl(args)) as T;
+      const result = (await impl(args, { outcome })) as T;
       await this.report(decisionId, 'completed');
       return result;
     } catch (e) {

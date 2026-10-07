@@ -1,0 +1,13 @@
+{
+  // The publishable build: JS + declarations for src/ only, into dist/. `tsconfig.json` stays the
+  // no-emit typecheck over src and test.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "sourceMap": true,
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src"]
+}

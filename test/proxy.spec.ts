@@ -1,14 +1,17 @@
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { describe, expect, it } from 'vitest';
 import { softwareKey } from '../src/key-provider.js';
 import { evaluateRules, unwrapUserParamValues } from '../src/sdk.js';
 import type { ViaMcpClient } from '../src/mcp/client.js';
-import { declaredParams, pickMandate, startViaMcpProxy } from '../src/mcp/proxy.js';
+import { declaredParams, pickMandate, startViaMcpProxy, type ViaMcpProxyConfig } from '../src/mcp/proxy.js';
 import type { JsonRpcMessage } from '../src/mcp/server.js';
 import { connectUpstream, inProcessUpstream, type UpstreamTool } from '../src/mcp/upstream.js';
 
 // ── stand-in upstream servers: real-shaped tools, every call journalled instead of performed ──
 function standin(service: string, tools: UpstreamTool[], fail: string[] = []) {
   const journal: { tool: string; args: Record<string, unknown> }[] = [];
+  const metas: unknown[] = []; // each call's `params._meta`, kept apart so the journal stays what the server was asked to do
   const handleRpc = async (msg: JsonRpcMessage): Promise<JsonRpcMessage | null> => {
     const ok = (result: unknown): JsonRpcMessage => ({ jsonrpc: '2.0', id: msg.id ?? null, result });
     switch (msg.method) {
@@ -19,13 +22,14 @@ function standin(service: string, tools: UpstreamTool[], fail: string[] = []) {
         const name = String(msg.params?.name);
         const args = (msg.params?.arguments ?? {}) as Record<string, unknown>;
         journal.push({ tool: name, args });
+        metas.push(msg.params?._meta);
         if (fail.includes(name)) return ok({ content: [{ type: 'text', text: `${name} failed upstream` }], isError: true });
         return ok({ content: [{ type: 'text', text: `${service}.${name} ok` }] });
       }
       default: return { jsonrpc: '2.0', id: msg.id ?? null, error: { code: -32601, message: 'no' } };
     }
   };
-  return { handleRpc, journal };
+  return { handleRpc, journal, metas };
 }
 const obj = (props: Record<string, unknown>, required: string[] = []) => ({ type: 'object', properties: props, required });
 const SLACK: UpstreamTool[] = [
@@ -101,7 +105,7 @@ function humanos(held = [SLACK_MANDATE, GMAIL_MANDATE]) {
   return { client, declared, verified, reported, stepUps };
 }
 
-async function setup(opts: { fail?: string[] } = {}) {
+async function setup(opts: { fail?: string[]; decorateCall?: ViaMcpProxyConfig['decorateCall'] } = {}) {
   const slack = standin('Slack', SLACK, opts.fail);
   const gmail = standin('Gmail', GMAIL);
   const h = humanos();
@@ -110,6 +114,7 @@ async function setup(opts: { fail?: string[] } = {}) {
     humanos: h.client,
     agentKey: await softwareKey(),
     did: 'did:web:humanos.tech:agent:proxy',
+    ...(opts.decorateCall ? { decorateCall: opts.decorateCall } : {}),
   });
   let id = 0;
   const call = async (name: string, args: Record<string, unknown>) => {
@@ -194,6 +199,29 @@ describe('the governing proxy — ViaGuard in front of MCP servers', () => {
     expect(slack.journal).toEqual([]);
   });
 
+  it('decorateCall: what it returns rides the call as _meta — it is given the decision, and runs only for a call that will be sent', async () => {
+    const seen: string[] = [];
+    const { call, slack } = await setup({
+      decorateCall: ({ tool, mandateId, outcome }) => {
+        seen.push(tool.upstreamName);
+        return { meta: { 'test.example/decision': { id: outcome.decisionEventId, decision: outcome.decision, mandateId } } };
+      },
+    });
+    await call('slack_send_message', { channel_id: 'C-OK', message: 'hi' });
+    expect(slack.metas).toEqual([{ 'test.example/decision': { id: 'urn:via:event:d-1', decision: 'allow', mandateId: 'urn:via:credential:slack' } }]);
+    // the arguments are the server's, untouched: what was added sits beside them
+    expect(slack.journal).toEqual([{ tool: 'slack_send_message', args: { channel_id: 'C-OK', message: 'hi' } }]);
+    await call('slack_send_message', { channel_id: 'C-GENERAL', message: 'hi' }); // denied
+    expect(seen).toEqual(['slack_send_message']);
+    expect(slack.journal).toHaveLength(1);
+  });
+
+  it('without decorateCall the call carries no _meta', async () => {
+    const { call, slack } = await setup();
+    await call('slack_send_message', { channel_id: 'C-OK', message: 'hi' });
+    expect(slack.metas).toEqual([undefined]);
+  });
+
   it('an upstream error is the server\'s own answer, and reported as a failed outcome', async () => {
     const { call, h } = await setup({ fail: ['slack_send_message'] });
     expect(await call('slack_send_message', { channel_id: 'C-OK', message: 'hi' })).toEqual({ text: 'slack_send_message failed upstream', isError: true });
@@ -234,5 +262,35 @@ describe('upstream over stdio', () => {
     expect(tools[0]!.annotations).toEqual({ readOnlyHint: true });
     expect(await u.callTool('echo', { text: 'hi' })).toEqual({ content: [{ type: 'text', text: 'echo:{"text":"hi"}' }] });
     await u.close();
+  });
+});
+
+describe('upstream over Streamable HTTP', () => {
+  it('per-call headers and _meta reach the server; a header the transport or the credential set is never replaced', async () => {
+    const calls: { headers: Record<string, unknown>; params: Record<string, unknown> }[] = [];
+    const server = createServer((req, res) => {
+      let body = '';
+      req.on('data', (c) => (body += c));
+      req.on('end', () => {
+        const msg = JSON.parse(body) as JsonRpcMessage;
+        if (msg.method === 'tools/call') calls.push({ headers: req.headers, params: msg.params ?? {} });
+        if (msg.id === undefined) return void res.writeHead(202).end();
+        const result = msg.method === 'initialize' ? { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'h', version: '0' } } : { content: [{ type: 'text', text: 'ok' }] };
+        res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result }));
+      });
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    try {
+      const u = await connectUpstream({ service: 'H', url: `http://127.0.0.1:${(server.address() as AddressInfo).port}/mcp`, headers: { Authorization: 'Bearer upstream' } });
+      await u.callTool('echo', { text: 'hi' }, { meta: { 'test.example/decision': 'd-1' }, headers: { 'X-Decision': 'd-1', authorization: 'Bearer other', 'content-type': 'text/plain' } });
+      await u.callTool('echo', { text: 'again' });
+      expect(calls[0]!.headers).toMatchObject({ 'x-decision': 'd-1', authorization: 'Bearer upstream', 'content-type': 'application/json' });
+      expect(calls[0]!.params).toEqual({ name: 'echo', arguments: { text: 'hi' }, _meta: { 'test.example/decision': 'd-1' } });
+      // per call means per call: the next one carries neither
+      expect(calls[1]!.headers['x-decision']).toBeUndefined();
+      expect(calls[1]!.params).toEqual({ name: 'echo', arguments: { text: 'again' } });
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
   });
 });

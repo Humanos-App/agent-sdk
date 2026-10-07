@@ -30,11 +30,22 @@ export interface UpstreamResult {
   structuredContent?: unknown;
 }
 
+/** What a caller may add to ONE `tools/call` beyond its arguments. */
+export interface UpstreamCallExtra {
+  /** Rides `params._meta` — MCP's own slot for per-request metadata, so it reaches every transport. */
+  meta?: Record<string, unknown>;
+  /**
+   * Streamable HTTP only: headers for this one request, for a gateway that reads headers and not
+   * bodies. They never replace a header the transport or the upstream's own credential sets.
+   */
+  headers?: Record<string, string>;
+}
+
 export interface Upstream {
   /** The service this server is, as the organization will see it grouped: "Slack", "Gmail". */
   readonly service: string;
   listTools(): Promise<UpstreamTool[]>;
-  callTool(name: string, args: Record<string, unknown>): Promise<UpstreamResult>;
+  callTool(name: string, args: Record<string, unknown>, extra?: UpstreamCallExtra): Promise<UpstreamResult>;
   close(): Promise<void>;
 }
 
@@ -55,12 +66,13 @@ export interface UpstreamSpec {
 const PROTOCOL = '2025-06-18';
 const CLIENT_INFO = { name: 'via-proxy', version: '0.1.0' };
 
-type Send = (msg: JsonRpcMessage) => Promise<JsonRpcMessage | null>;
+/** `headers` are per request and only an HTTP transport has anywhere to put them. */
+type Send = (msg: JsonRpcMessage, headers?: Record<string, string>) => Promise<JsonRpcMessage | null>;
 
 function session(service: string, send: Send, notify: (msg: JsonRpcMessage) => Promise<void>, close: () => Promise<void>): Upstream & { init(): Promise<void> } {
   let seq = 0;
-  const rpc = async (method: string, params?: Record<string, unknown>): Promise<Record<string, unknown>> => {
-    const resp = await send({ jsonrpc: '2.0', id: `${service}-${++seq}`, method, ...(params ? { params } : {}) });
+  const rpc = async (method: string, params?: Record<string, unknown>, headers?: Record<string, string>): Promise<Record<string, unknown>> => {
+    const resp = await send({ jsonrpc: '2.0', id: `${service}-${++seq}`, method, ...(params ? { params } : {}) }, headers);
     if (!resp) throw new Error(`upstream ${service}: no response to ${method}`);
     if (resp.error) throw new Error(`upstream ${service}: ${method} failed — ${typeof resp.error === 'object' ? JSON.stringify(resp.error) : String(resp.error)}`);
     return (resp.result ?? {}) as Record<string, unknown>;
@@ -83,8 +95,8 @@ function session(service: string, send: Send, notify: (msg: JsonRpcMessage) => P
       }
       return out;
     },
-    async callTool(name, args) {
-      const r = (await rpc('tools/call', { name, arguments: args })) as Partial<UpstreamResult>;
+    async callTool(name, args, extra) {
+      const r = (await rpc('tools/call', { name, arguments: args, ...(extra?.meta ? { _meta: extra.meta } : {}) }, extra?.headers)) as Partial<UpstreamResult>;
       return {
         content: Array.isArray(r.content) ? r.content : [],
         ...(r.isError ? { isError: true } : {}),
@@ -169,16 +181,21 @@ async function stdioUpstream(spec: UpstreamSpec): Promise<Upstream> {
 
 async function httpUpstream(spec: UpstreamSpec): Promise<Upstream> {
   let sessionId: string | undefined;
-  const post: Send = async (msg) => {
+  const post: Send = async (msg, perCall) => {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+      'MCP-Protocol-Version': PROTOCOL,
+      ...(sessionId ? { 'Mcp-Session-Id': sessionId } : {}),
+      ...(spec.headers ?? {}),
+    };
+    // Per-call headers add, never replace: a name the transport or the upstream's credential
+    // already set (in any letter case) is dropped rather than merged into it.
+    const taken = new Set(Object.keys(headers).map((k) => k.toLowerCase()));
+    for (const [k, v] of Object.entries(perCall ?? {})) if (!taken.has(k.toLowerCase())) headers[k] = v;
     const res = await fetch(spec.url!, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json, text/event-stream',
-        'MCP-Protocol-Version': PROTOCOL,
-        ...(sessionId ? { 'Mcp-Session-Id': sessionId } : {}),
-        ...(spec.headers ?? {}),
-      },
+      headers,
       body: JSON.stringify(msg),
       signal: AbortSignal.timeout(spec.timeoutMs ?? 60_000),
     });

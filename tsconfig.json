@@ -11,7 +11,5 @@
     "noEmit": true,
     "types": ["node"]
   },
-  // `../sdk-v03/src` is included because the imports below still reach into sibling SOURCE rather
-  // than resolving `@humanos/via-sdk-v03` as a package. See the note in package.json.
-  "include": ["src", "test", "../sdk-v03/src"]
+  "include": ["src", "test"]
 }

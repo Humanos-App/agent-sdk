@@ -1,0 +1,21 @@
+# agent-sdk gaps found by agent-kit
+
+Written 2026-09-28 while building `agent-kit/` (the support and claims agents) on `@humanos/agent-sdk`'s public
+barrel only (imported by package name only). Each gap names the local workaround, which
+is the candidate upstream patch. Section numbers are **v0.3**.
+
+| # | Gap | Workaround here | Where the fix belongs |
+|---|---|---|---|
+| G1 | ~~Not publishable: exported TS source that imported `../../sdk-v03/src/…` by path.~~ **Fixed 2026-09-30:** agent-sdk imports the package `@humanos/via-sdk-v03` (peer; `file:../sdk-v03` devDependency in this repo), builds to `dist/` with types, and `npm run pack:agent-kit` packs both SDKs into `agent-kit/vendor/`. | — | done — refresh vendor after any SDK change |
+| G2 | **No key survives a restart.** Every provider (`softwareKey`, `deviceSelfKey`, `custodialKey`, `attestedKey`) mints its key inside a closure; none can be saved or loaded, and the barrel exports no keygen or signer to build one. An agent that registers in one process and acts in the next can only be `pop/self` — which is why the claims agent could not be given a stronger grade than support. | `agent-kit/lib/stored-key.ts` (WebCrypto, file-backed) | `agent-sdk/src/key-provider.ts`: a `storedKey(file)` / `fromJwk()`, and a way to rehydrate the attested/custodial providers |
+| G3 | The connector lifecycle is untyped. Only `challenge`/`verify`/`report_outcome`/`get_mandate` are wrapped; `register_challenge`+`register`, `propose_action`, `list_mandate_kinds`, `request_mandate`, `mandate_status`, `stepup_status`, `server_info`, `get_actor` are raw `callTool` + `JSON.parse`, with result shapes copied from `apps/mcp`. | `agent-kit/lib/connector.ts` | `agent-sdk/src/mcp/` — typed wrappers next to `getMandates` |
+| G4 | No type for *authoring* an action. `extractFromToolsList` goes the other way (tools/list → YAML, rules always empty); the `propose_action` payload has no SDK type. | `agent-kit/lib/surface.ts` (`AgentSurface` → proposal / declaration / LLM tools) | `agent-sdk` |
+| G5 | No driver for an agent that owns its model loop. `ViaGuard.call` returns on allow but **throws** on deny and rethrows tool errors, so every caller writes the same try/catch; nothing projects a surface to LLM function definitions or turns a deny into a "do not retry" tool message. The MCP server/proxy cover MCP hosts, not this case. | `agent-kit/lib/runner.ts` (`guardedCall` → `StepResult`), `agent-kit/lib/llm.ts` | `agent-sdk` |
+| G6 | `propose_action` takes rules as `{name, description, expression}` only — no `appliesTo`/`requires`. A per-tool limit must guard on `executionParams.tool` in CEL, so calls by other tools evaluate as **`pass`, not `skip`**: the audit cannot tell "did not apply" from "passed" (the distinction `ActionRule.appliesTo` exists for). | `executionParams.tool != 'x' \|\| …` in each rule | `apps/mcp` `propose_action` schema (platform) |
+| G7 | Step-up (§17.4) on the connector is out of band, but `onRechallenge` must resolve to a boolean — so every agent writes its own `stepup_status` poll. The proxy has `ViaStepUpPendingError`, but only inside the proxy. | `waitForStepUp` in `agent-kit/lib/connector.ts` | `agent-sdk`: a `pollStepUp(client)` usable as `onRechallenge` |
+| G8 | ~~No `GuardVerifier` test double.~~ **Fixed 2026-09-28:** `@humanos/agent-sdk/testing` exports `createTestVerifier` (PoP, nonce, action hash, CEL rules, step-up, outcomes) plus `evaluateRules` / `validateCelExpression`. | — | done |
+| G9 | Barrel omits `ViaMandateCredential`, `Jwk` and `ViaActorSubject` (so `get_actor` is typed by hand, `ActorSummary` in `agent-kit/lib/connector.ts`); `getMandates` types `action.content` as `{ rules? }` only, so choosing a mandate by action name needs a cast (and whether `content.name` is populated is **unverified** until a live run). | `HeldMandate['mandate']`, `ViaAgentKey['publicJwk']`, cast | `agent-sdk/src/index.ts` |
+| G10 | Nothing reads the agent's own risk: no client for `GET /intelligence/risk` or `/intelligence/risk/signal` (apps/api, a different host and auth from the connector). | — (phase 3) | `agent-sdk` or a separate insurer-side verifier |
+
+Still to check on a live run: what the real platform grants each agent, whether `get_mandate`'s
+`action.content` carries the action name (G9), and the step-up round trip on `pay_claimant`.

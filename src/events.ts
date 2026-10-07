@@ -1,4 +1,4 @@
-import type { EventType } from '../../sdk-v03/src/crypto/proof.js';
+import type { EventType } from '@humanos/via-sdk-v03';
 
 /**
  * The two-phase outcome kinds. **They landed upstream on 2026-09-03**: both are in

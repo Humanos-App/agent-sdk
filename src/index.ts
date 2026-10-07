@@ -27,7 +27,7 @@ export type { ViaAgentKey, ConfinementEvidence, Assurance, Binding } from './key
 
 // The PEP — every tool call: challenge → PoP → verify → execute/refuse/step-up.
 export { ViaGuard, ViaDeniedError } from './guard.js';
-export type { GuardOptions, GuardCallOutcome } from './guard.js';
+export type { GuardOptions, GuardCallOutcome, GuardCallContext } from './guard.js';
 
 // The platform transport + the delegation ceremony.
 export { MiniPlatformClient, delegationParams } from './client.js';
@@ -47,7 +47,7 @@ export { createStdioTransport } from './mcp/stdio.js';
 export { startViaMcpProxy, pickMandate, declaredParams, ViaStepUpPendingError } from './mcp/proxy.js';
 export type { ViaMcpProxyConfig, ViaMcpProxy, ProxiedTool } from './mcp/proxy.js';
 export { connectUpstream, inProcessUpstream } from './mcp/upstream.js';
-export type { Upstream, UpstreamSpec, UpstreamTool, UpstreamResult } from './mcp/upstream.js';
+export type { Upstream, UpstreamSpec, UpstreamTool, UpstreamResult, UpstreamCallExtra } from './mcp/upstream.js';
 export type { StepUpRef } from './types.js';
 
 // EXTRACTION — parse an already-built agent's tool surface into a VIAAction draft. Params and

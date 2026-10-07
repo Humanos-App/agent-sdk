@@ -21,11 +21,11 @@
 import { ViaDeniedError, ViaGuard } from '../guard.js';
 import type { ViaAgentKey } from '../key-provider.js';
 import { unwrapUserParamValues } from '../sdk.js';
-import type { StepUpRef } from '../types.js';
+import type { StepUpRef, VerifyOutcome } from '../types.js';
 import type { ViaMcpClient } from './client.js';
 import { McpGuardVerifier, getMandates } from './guard-verifier.js';
 import { defaultPlainReason, type JsonRpcMessage } from './server.js';
-import type { Upstream, UpstreamResult, UpstreamTool } from './upstream.js';
+import type { Upstream, UpstreamCallExtra, UpstreamResult, UpstreamTool } from './upstream.js';
 
 type Held = Awaited<ReturnType<typeof getMandates>>[number];
 
@@ -58,6 +58,18 @@ export interface ViaMcpProxyConfig {
    * Without it a step-up returns the approve link to the agent and the retry carries the approval.
    */
   onStepUp?: (info: { tool: string; params: Record<string, unknown>; stepUp?: StepUpRef }) => Promise<boolean>;
+  /**
+   * What to add to the upstream call now that a decision exists — `_meta`, and headers over HTTP.
+   * The seam for carrying the verifier's decision to the server that executes the call; what goes
+   * there is the caller's, the proxy defines none of it. Runs only for a call about to reach the
+   * upstream, so `outcome.decision` is `allow`, or `deny` under `observe`.
+   */
+  decorateCall?: (ctx: {
+    tool: ProxiedTool;
+    args: Record<string, unknown>;
+    mandateId: string;
+    outcome: VerifyOutcome;
+  }) => UpstreamCallExtra | undefined | Promise<UpstreamCallExtra | undefined>;
   plainReason?: (reason?: string) => string;
   serverInfo?: { name: string; version: string };
   instructions?: string;
@@ -235,8 +247,9 @@ export async function startViaMcpProxy(cfg: ViaMcpProxyConfig): Promise<ViaMcpPr
       const out = await guardFor(h).call<UpstreamResult>(
         tool.upstreamName,
         args,
-        async (a) => {
-          const r = await tool.upstream.callTool(tool.upstreamName, a);
+        async (a, ctx) => {
+          const extra = cfg.decorateCall ? await cfg.decorateCall({ tool, args: a, mandateId: h.mandate.id, outcome: ctx.outcome }) : undefined;
+          const r = await tool.upstream.callTool(tool.upstreamName, a, extra);
           if (r.isError) throw new UpstreamToolError(r); // reported as ACTION_FAILED, then surfaced as the server said it
           return r;
         },

@@ -20,6 +20,9 @@
 import { createHmac } from 'node:crypto';
 import type { McpTool } from '../types.js';
 
+/** Sent as `clientInfo.version`; keep in step with package.json. */
+export const SDK_VERSION = '0.1.1';
+
 export interface ViaMcpClientOptions {
   /** Full endpoint, e.g. `https://mcp.humanos.tech/mcp`. */
   url: string;
@@ -49,7 +52,12 @@ export interface ViaMcpClient {
 
 /** Raised when the connector refuses the credential — distinct from a tool refusing a request. */
 export class ViaMcpAuthError extends Error {
-  constructor(public readonly status: number, message: string) {
+  constructor(
+    public readonly status: number,
+    message: string,
+    /** The connector's response body: parsed JSON when it is JSON, the text otherwise. */
+    public readonly body?: unknown,
+  ) {
     super(message);
     this.name = 'ViaMcpAuthError';
   }
@@ -95,12 +103,18 @@ export function createViaMcpClient(options: ViaMcpClientOptions): ViaMcpClient {
     });
 
     if (res.status === 401 || res.status === 403) {
-      // The connector challenges with `WWW-Authenticate`; surface it, because it names where to
-      // authenticate and is the only useful thing in an otherwise empty refusal.
+      // The body is the only thing that tells the failures apart ("Invalid signature" from the
+      // HMAC guard, `invalid_token` from the OAuth layer), so it goes in the message and on the
+      // error. The `WWW-Authenticate` challenge names where to authenticate; keep it too.
+      const body = await readErrorBody(res);
+      const reason = errorReason(body);
       const challenge = res.headers.get('www-authenticate') ?? '';
-      throw new ViaMcpAuthError(res.status, `credential refused${challenge ? ` — ${challenge}` : ''}`);
+      throw new ViaMcpAuthError(res.status, `credential refused (HTTP ${res.status})${reason ? `: ${reason}` : ''}${challenge ? ` [${challenge}]` : ''}`, body);
     }
-    if (!res.ok) throw new Error(`MCP request failed: HTTP ${res.status}`);
+    if (!res.ok) {
+      const reason = errorReason(await readErrorBody(res));
+      throw new Error(`MCP request failed: HTTP ${res.status}${reason ? `: ${reason}` : ''}`);
+    }
 
     const payload = (await res.json()) as { result?: unknown; error?: { code: number; message: string } };
     if (payload.error) throw new Error(`MCP error ${payload.error.code}: ${payload.error.message}`);
@@ -112,7 +126,7 @@ export function createViaMcpClient(options: ViaMcpClientOptions): ViaMcpClient {
       return (await rpc('initialize', {
         protocolVersion,
         capabilities: {},
-        clientInfo: { name: 'via-agent-sdk', version: '0.1.0' },
+        clientInfo: { name: 'via-agent-sdk', version: SDK_VERSION },
       })) as { serverInfo: { name: string; version: string }; protocolVersion: string };
     },
 
@@ -136,4 +150,32 @@ export function createViaMcpClient(options: ViaMcpClientOptions): ViaMcpClient {
       return { text, isError: result.isError === true };
     },
   };
+}
+
+/** The error response body: parsed JSON when it is JSON, the text otherwise, undefined when empty. */
+async function readErrorBody(res: Response): Promise<unknown> {
+  const text = await res.text().catch(() => '');
+  if (!text) return undefined;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+/**
+ * The server's own words from an error body. Nest answers `{ message }` (an array for validation
+ * errors), OAuth answers `{ error, error_description }`, JSON-RPC answers `{ error: { message } }`.
+ * Anything else (a proxy's HTML page) is cut short.
+ */
+function errorReason(body: unknown): string {
+  if (typeof body === 'string') return body.replace(/\s+/g, ' ').trim().slice(0, 200);
+  if (!body || typeof body !== 'object') return '';
+  const { message, error_description: description, error } = body as { message?: unknown; error_description?: unknown; error?: unknown };
+  if (typeof message === 'string' && message) return message;
+  if (Array.isArray(message)) return message.join('; ');
+  if (typeof description === 'string' && description) return description;
+  if (typeof error === 'string') return error;
+  if (error && typeof error === 'object' && typeof (error as { message?: unknown }).message === 'string') return (error as { message: string }).message;
+  return '';
 }

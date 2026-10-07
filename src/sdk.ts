@@ -1,5 +1,5 @@
 /**
- * The Agent SDK's view of the VIA protocol (`sdk-v03`, imported read-only) —
+ * The Agent SDK's view of the VIA protocol (`@humanos/via-sdk-v03`, the published package) —
  * only what the AGENT SIDE of the wire needs: P-256 keys + signing, PoP
  * encoding, canonicalization/digests, the credential/event types, and the
  * actor-model types an agent presents or receives. Platform-side machinery
@@ -12,12 +12,12 @@ export {
   cleanPublicJwk,
   signES256,
   verifyES256,
-} from '../../sdk-v03/src/crypto/p256.js';
-export type { Jwk, P256KeyPair } from '../../sdk-v03/src/crypto/p256.js';
-export { computeSRI } from '../../sdk-v03/src/crypto/digest.js';
-export { canonicalizeRFC8785 } from '../../sdk-v03/src/crypto/canonicalize.js';
-export { buildPoP, actionHash, decodePoP, verifyPoPSignature } from '../../sdk-v03/src/agent/pop.js';
-export type { PopPayload } from '../../sdk-v03/src/agent/pop.js';
+} from '@humanos/via-sdk-v03';
+export type { Jwk, P256KeyPair } from '@humanos/via-sdk-v03';
+export { computeSRI } from '@humanos/via-sdk-v03';
+export { canonicalizeRFC8785 } from '@humanos/via-sdk-v03';
+export { buildPoP, actionHash, decodePoP, verifyPoPSignature } from '@humanos/via-sdk-v03';
+export type { PopPayload } from '@humanos/via-sdk-v03';
 export type {
   BoundKey,
   Assurance,
@@ -28,22 +28,22 @@ export type {
   ConfinementResult,
   CustodyRef,
   NitroCa,
-} from '../../sdk-v03/src/agent/types.js';
-export type { KeyDescription, DescribeKey } from '../../sdk-v03/src/agent/attestation.js';
+} from '@humanos/via-sdk-v03';
+export type { KeyDescription, DescribeKey } from '@humanos/via-sdk-v03';
 // Dev-only attestation PRODUCER (separate SDK entry point — pulls in @peculiar/x509).
 // Lets `attestedKey()` mint a real COSE_Sign1 instead of a mock quote.
-export { mintNitroCa, buildCoseAttestation } from '../../sdk-v03/src/agent/sim.js';
-export type { EventType } from '../../sdk-v03/src/crypto/proof.js';
-export type { ViaMandateCredential, ViaEvent } from '../../sdk-v03/src/types.js';
-export type { ChainAudit } from '../../sdk-v03/src/event/build.js';
-export type { RuleEvaluation } from '../../sdk-v03/src/cel/evaluate.js';
-export { evaluateRules } from '../../sdk-v03/src/cel/evaluate.js';
-export { unwrapUserParamValues } from '../../sdk-v03/src/action/execution-params.js';
-export type { ActionRule } from '../../sdk-v03/src/action/types.js';
+export { mintNitroCa, buildCoseAttestation } from '@humanos/via-sdk-v03/agent/sim';
+export type { EventType } from '@humanos/via-sdk-v03';
+export type { ViaMandateCredential, ViaEvent } from '@humanos/via-sdk-v03';
+export type { ChainAudit } from '@humanos/via-sdk-v03';
+export type { RuleEvaluation } from '@humanos/via-sdk-v03';
+export { evaluateRules, validateCelExpression } from '@humanos/via-sdk-v03';
+export { unwrapUserParamValues } from '@humanos/via-sdk-v03';
+export type { ActionRule } from '@humanos/via-sdk-v03';
 export type {
   ViaActorRecord,
   ViaActorSubject,
   ActorKeyState,
   ActorStatus,
   BootstrapAnchor,
-} from '../../sdk-v03/src/actor/model.js';
+} from '@humanos/via-sdk-v03';
