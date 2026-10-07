@@ -1,6 +1,6 @@
 {
   "name": "@humanos/agent-sdk",
-  "version": "0.2.0",
+  "version": "0.1.3",
   "private": true,
   "type": "module",
   "description": "Humanos Agent SDK — put an AI agent under a mandate: its own key and proof of possession, the ViaGuard that verifies every tool call before it runs, the Humanos connector client, and an MCP server and governing proxy. The VIA protocol is @humanos/via-sdk-v03.",

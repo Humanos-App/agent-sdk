@@ -19,7 +19,7 @@ For complete, runnable agents built on it, see
 | **`ViaGuard`** | the gate around every tool call: challenge → proof of possession → verify → run, refuse, or wait for the person's approval (step-up) → report the outcome |
 | **`createViaMcpClient`** | the Humanos connector, authenticated with the organization's API key and signing secret |
 | **`McpGuardVerifier`**, **`getMandates`** | the connector as the guard's verifier, and "which mandates do I hold?" |
-| **`startViaMcpProxy`** | a governing proxy in front of MCP servers you did not write, whose tools can change while it runs |
+| **`startViaMcpProxy`** | a governing proxy in front of MCP servers you did not write; `refresh()` declares their new tools |
 | **`declareTools`** | tell Humanos which tools an agent can call, each as its server describes it, one call per service |
 | **`startViaMcpServer`** | expose a guarded agent's tools to an MCP host |
 | **`extractFromToolsList`**, **`importActionDraft`** | turn an existing tool surface into a draft action for the organization |
@@ -74,29 +74,30 @@ try {
 ## Govern MCP servers you did not write
 
 ```ts
-import { createStdioTransport, startViaMcpProxy, connectUpstream } from '@humanos/agent-sdk';
+import { createStdioTransport, startViaMcpProxy, connectUpstream, declareTools } from '@humanos/agent-sdk';
 
-const transport = createStdioTransport();
 const proxy = await startViaMcpProxy({
   upstreams: [await connectUpstream({ service: 'Slack', url: 'https://mcp.slack.com/mcp', headers: { Authorization: `Bearer ${slackToken}` } })],
   humanos: client,
   agentKey,
   did,
-  notify: transport.notify, // the agent hears when its tools change
 });
-transport.run(proxy);
+createStdioTransport().run(proxy);
 
-await proxy.addUpstream({ service: 'Files', command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/data'] });
-await proxy.refresh('Slack'); // a remote server's new tools; a local one's are picked up on their own
-await proxy.removeUpstream('Files'); // Humanos keeps its tools, marked no longer declared
+// Declaring new tools is the agent's job: when a server's tools change, say so.
+await proxy.refresh('Slack');
+
+// An agent that stops using a service: Humanos keeps its tools, marked no longer declared.
+await declareTools(client, did, [], { emptyServices: ['Files'] });
 ```
 
-Every tool is declared to Humanos as its server describes it: schemas, annotations and the server
-it comes from, never cut by the SDK (Humanos caps long text itself, the same way for every agent).
-Each change declares again only the services whose tools changed. A service is declared in one
-call of at most 500 tools; past that, and when the agent reaches its tool limit, the proxy warns
-(`onWarning`, stderr by default). This needs a Humanos platform that takes full tool definitions:
-an earlier one refuses descriptions over 1,000 characters.
+At start, and on each `refresh`, every tool is declared to Humanos as its server describes it:
+schemas, annotations and the server it comes from, never cut by the SDK (Humanos caps long text
+itself, the same way for every agent). A `refresh` declares again only the services whose tools
+changed. A service is declared in one call of at most 500 tools; past that, and when the agent
+reaches its tool limit, the proxy warns (`onWarning`, stderr by default). This needs a Humanos
+platform that takes full tool definitions: an earlier one refuses descriptions over 1,000
+characters.
 
 ## Test without a platform
 

@@ -5,8 +5,7 @@
  *
  * Bidirectional: the transport can also SEND server→client requests
  * (elicitation) — create it FIRST, pass its `sendRequest` into
- * `startViaMcpServer`, then `run(server)` — and notifications: pass its
- * `notify` into `startViaMcpProxy`, so the agent hears when its tools change.
+ * `startViaMcpServer`, then `run(server)`.
  */
 import { createInterface } from 'node:readline';
 import type { JsonRpcMessage, ViaMcpServer } from './server.js';
@@ -14,8 +13,6 @@ import type { JsonRpcMessage, ViaMcpServer } from './server.js';
 export interface StdioTransport {
   /** Server→client JSON-RPC request; resolves on the client's matching response. */
   sendRequest: (method: string, params: Record<string, unknown>) => Promise<unknown>;
-  /** Server→client notification, which has no answer: `notifications/tools/list_changed`. */
-  notify: (msg: JsonRpcMessage) => void;
   /** Start pumping stdin→handleRpc→stdout. Exits the process when drained after stdin closes. */
   run(server: Pick<ViaMcpServer, 'handleRpc'>): void;
 }
@@ -31,8 +28,6 @@ export function createStdioTransport(): StdioTransport {
       outbound.set(id, { resolve, reject, timer });
       process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
     });
-
-  const notify = (msg: JsonRpcMessage): void => void process.stdout.write(JSON.stringify(msg) + '\n');
 
   const run = (server: Pick<ViaMcpServer, 'handleRpc'>): void => {
     let inflight = 0;
@@ -75,5 +70,5 @@ export function createStdioTransport(): StdioTransport {
     rl.on('close', () => { closed = true; exitIfDrained(); });
   };
 
-  return { sendRequest, notify, run };
+  return { sendRequest, run };
 }

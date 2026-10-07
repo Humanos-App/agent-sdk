@@ -13,13 +13,12 @@ import { connectUpstream, inProcessUpstream, type UpstreamTool } from '../src/mc
 function standin(service: string, tools: UpstreamTool[], fail: string[] = []) {
   const journal: { tool: string; args: Record<string, unknown> }[] = [];
   const metas: unknown[] = []; // each call's `params._meta`, kept apart so the journal stays what the server was asked to do
-  const listings = { count: 0 }; // how often the server was asked for its tools
   const handleRpc = async (msg: JsonRpcMessage): Promise<JsonRpcMessage | null> => {
     const ok = (result: unknown): JsonRpcMessage => ({ jsonrpc: '2.0', id: msg.id ?? null, result });
     switch (msg.method) {
       case 'initialize': return ok({ protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: service, version: '0' } });
       case 'notifications/initialized': return null;
-      case 'tools/list': listings.count++; return ok({ tools });
+      case 'tools/list': return ok({ tools });
       case 'tools/call': {
         const name = String(msg.params?.name);
         const args = (msg.params?.arguments ?? {}) as Record<string, unknown>;
@@ -31,11 +30,7 @@ function standin(service: string, tools: UpstreamTool[], fail: string[] = []) {
       default: return { jsonrpc: '2.0', id: msg.id ?? null, error: { code: -32601, message: 'no' } };
     }
   };
-  // How the server says its tools changed, as a stdio server would by writing the notification.
-  let notify: ((msg: JsonRpcMessage) => void) | undefined;
-  const notifications = (n: (msg: JsonRpcMessage) => void): void => void (notify = n);
-  const toolsChanged = (): void => notify?.({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' });
-  return { handleRpc, journal, metas, listings, notifications, toolsChanged };
+  return { handleRpc, journal, metas };
 }
 const obj = (props: Record<string, unknown>, required: string[] = []) => ({ type: 'object', properties: props, required });
 const SLACK: UpstreamTool[] = [
@@ -241,29 +236,26 @@ describe('the governing proxy — ViaGuard in front of MCP servers', () => {
   });
 });
 
-// ── a proxy over Slack alone, recording what it tells its agent and what it warns about ──
+// ── a proxy over Slack and part of Gmail, whose tool lists the tests change ──
 async function live() {
   const slackTools = [...SLACK];
-  const slack = standin('Slack', slackTools);
+  const gmailTools = [GMAIL[0]!]; // no name shared with Slack, yet
   const h = humanos();
-  const notified: JsonRpcMessage[] = [];
   const proxy = await startViaMcpProxy({
-    upstreams: [await inProcessUpstream('Slack', slack.handleRpc, slack.notifications)],
+    upstreams: [await inProcessUpstream('Slack', standin('Slack', slackTools).handleRpc), await inProcessUpstream('Gmail', standin('Gmail', gmailTools).handleRpc)],
     humanos: h.client,
     agentKey: await softwareKey(),
     did: 'did:web:humanos.tech:agent:proxy',
-    notify: (m) => notified.push(m),
   });
+  h.declared.length = 0; // what the start declared is the first test's business, not these
   const names = async (): Promise<string[]> => ((await proxy.handleRpc({ jsonrpc: '2.0', id: 1, method: 'tools/list' }))!.result as { tools: { name: string }[] }).tools.map((t) => t.name);
-  return { proxy, slack, slackTools, h, notified, names };
+  return { proxy, slackTools, gmailTools, h, names };
 }
 const pin: UpstreamTool = { name: 'slack_pin', inputSchema: obj({ message_ts: { type: 'string' } }) };
 
-describe('a surface that changes while the proxy runs', () => {
-  it('refresh declares again only the service whose tools changed, and nothing when none did', async () => {
+describe('refresh: the agent says its tools changed', () => {
+  it('declares again only the service whose tools changed, and nothing when none did', async () => {
     const { proxy, slackTools, h } = await live();
-    await proxy.addUpstream(await inProcessUpstream('Gmail', standin('Gmail', [GMAIL[0]!]).handleRpc));
-    h.declared.length = 0;
     slackTools.push(pin);
 
     await proxy.refresh();
@@ -272,56 +264,28 @@ describe('a surface that changes while the proxy runs', () => {
     expect(h.declared).toHaveLength(1);
   });
 
-  it('adding a server declares it, and declares again a service whose tool now carries a prefix', async () => {
-    const { proxy, h, names } = await live();
-    h.declared.length = 0;
+  it('serves the new tools, and declares again a service whose tool now carries a prefix', async () => {
+    const { proxy, gmailTools, h, names } = await live();
+    gmailTools.push(GMAIL[1]!); // Gmail's search: Slack has one too
 
-    await proxy.addUpstream(await inProcessUpstream('Gmail', standin('Gmail', GMAIL).handleRpc));
+    await proxy.refresh('Gmail');
 
-    expect(await names()).toEqual(expect.arrayContaining(['slack__search', 'gmail__search', 'send_message']));
+    expect(await names()).toEqual(expect.arrayContaining(['slack__search', 'gmail__search']));
     expect(h.declared.map((d) => d.services)).toEqual([['Slack'], ['Gmail']]);
     expect((h.declared[0]!.tools as Record<string, unknown>[]).find((t) => t.name === 'search')).toMatchObject({ calledAs: 'slack__search' });
   });
 
-  it('tells the agent its tools changed, having announced that they can', async () => {
-    const { proxy, notified } = await live();
-    const init = (await proxy.handleRpc({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }))!.result as { capabilities: { tools: { listChanged: boolean } } };
-    expect(init.capabilities.tools.listChanged).toBe(true);
+  it('declares a service whose server lists no tools any more with none, so Humanos marks them absent', async () => {
+    const { proxy, gmailTools, h } = await live();
+    gmailTools.length = 0;
 
-    await proxy.addUpstream(await inProcessUpstream('Gmail', standin('Gmail', GMAIL).handleRpc));
-    await proxy.refresh(); // nothing changed: nothing to tell
-    expect(notified).toEqual([{ jsonrpc: '2.0', method: 'notifications/tools/list_changed' }]);
+    await proxy.refresh();
+
+    expect(h.declared).toEqual([{ did: 'did:web:humanos.tech:agent:proxy', tools: [], services: ['Gmail'] }]);
+    expect(proxy.declared).toEqual({ services: ['Slack'], tools: SLACK.length });
   });
 
-  it('removing a server declares its service with no tools, and stops offering them', async () => {
-    const { proxy, h, names } = await live();
-    await proxy.addUpstream(await inProcessUpstream('Gmail', standin('Gmail', GMAIL).handleRpc));
-    h.declared.length = 0;
-
-    await proxy.removeUpstream('Gmail');
-
-    // Slack's search loses its prefix, so Slack is declared again; Gmail is declared empty.
-    expect(h.declared.map((d) => [d.services, (d.tools as unknown[]).length])).toEqual([[['Slack'], 5], [['Gmail'], 0]]);
-    expect(await names()).toEqual(SLACK.map((t) => t.name));
-    expect(proxy.declared).toEqual({ services: ['Slack'], tools: 5 });
-  });
-
-  it('a local server saying its tools changed refreshes that service by itself, once for a burst', async () => {
-    const { proxy, slack, slackTools, h } = await live();
-    h.declared.length = 0;
-    slackTools.push(pin);
-    const before = slack.listings.count;
-
-    slack.toolsChanged();
-    slack.toolsChanged();
-    expect(await proxy.refresh()).toEqual([]); // queued behind the one the notifications started
-
-    expect(slack.listings.count - before).toBe(2); // one for the burst, one for this refresh
-    expect(h.declared).toHaveLength(1);
-    expect((h.declared[0]!.tools as { name: string }[]).map((t) => t.name)).toContain('slack_pin');
-  });
-
-  it('a refused declaration leaves the new tools callable, and they are declared on the next change', async () => {
+  it('a refused declaration leaves the new tools callable, and they are declared on the next refresh', async () => {
     const { proxy, slackTools, h, names } = await live();
     h.refuse.add('Slack');
     slackTools.push(pin);
@@ -330,7 +294,6 @@ describe('a surface that changes while the proxy runs', () => {
     expect(await names()).toContain('slack_pin');
 
     h.refuse.clear();
-    h.declared.length = 0;
     await proxy.refresh();
     expect(h.declared.map((d) => d.services)).toEqual([['Slack']]);
   });
@@ -373,16 +336,9 @@ describe('upstream over stdio', () => {
 });
 
 describe('upstream over stdio: the server behind it', () => {
-  it('knows the server it reached by its command name, never its arguments, and hears it say its tools changed', async () => {
+  it('knows the server it reached by its command name, never its arguments', async () => {
     const u = await connectUpstream({ service: 'Echo', command: process.execPath, args: [new URL('./fixtures/stdio-standin.mjs', import.meta.url).pathname] });
     expect(u.server).toEqual({ transport: 'stdio', host: basename(process.execPath), name: 'standin', version: '0' });
-    let heard = 0;
-    u.onToolsChanged!(() => heard++);
-
-    await u.callTool('echo', { text: 'grow' }); // the server notifies before it answers
-
-    expect(heard).toBe(1);
-    expect((await u.listTools()).map((t) => t.name)).toEqual(['echo', 'echo2']);
     await u.close();
   });
 });
