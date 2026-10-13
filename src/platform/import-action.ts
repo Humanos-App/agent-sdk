@@ -99,19 +99,31 @@ export async function importActionDraft(
     tools: toWireTools(list, options.grantorRoles),
     ...(options.grantorParams ? { grantorParams: options.grantorParams } : {}),
   });
-  const timestamp = now();
+  const base = options.baseUrl.replace(/\/+$/, '');
+  const did = encodeURIComponent(options.did);
+  const post = (path: string) => {
+    const timestamp = now();
+    return doFetch(`${base}${path}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${options.apiKey}`,
+        'x-timestamp': String(timestamp),
+        'x-signature': signRequest(body, options.signatureSecret, timestamp),
+      },
+      body,
+    });
+  };
 
-  const url = `${options.baseUrl.replace(/\/+$/, '')}/agents/${encodeURIComponent(options.did)}/actions`;
-  const res = await doFetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${options.apiKey}`,
-      'x-timestamp': String(timestamp),
-      'x-signature': signRequest(body, options.signatureSecret, timestamp),
-    },
-    body,
-  });
+  // The platform's route since API version 2026-10-13: the static segment before the DID. A key
+  // created after that date is pinned to it and gets a 404 on the old path.
+  let res = await post(`/agents/actions/${did}`);
+  if (res.status === 404) {
+    // A platform from before the routes moved serves the old path only. Its answer is kept unless it
+    // is a 404 too: then the first one stands — "that DID is not your agent" is worth reading.
+    const older = await post(`/agents/${did}/actions`);
+    if (older.status !== 404) res = older;
+  }
 
   if (!res.ok) {
     // The platform's refusals here are informative — an unaffiliated DID, an empty surface, a

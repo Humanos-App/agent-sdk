@@ -64,10 +64,48 @@ describe('importActionDraft', () => {
 
     const { url, body, headers } = seen[0]!;
     // Trailing slash on baseUrl must not produce a double slash in the path.
-    expect(url).toBe('https://api.example.test/agents/did%3Akey%3AzAgent/actions');
+    expect(url).toBe('https://api.example.test/agents/actions/did%3Akey%3AzAgent');
     expect(headers.Authorization).toBe('Bearer key-123');
     expect(headers['x-signature']).toBe(signRequest(body, 'secret', 1757160000000));
     // Same signing function as the MCP client, so the two cannot drift apart.
+  });
+
+  it('falls back to the old path on a platform from before the routes moved', async () => {
+    // API version 2026-10-13 moved the route to `/agents/actions/:did`; an older platform answers
+    // 404 there and serves `/agents/:did/actions`.
+    const seen: string[] = [];
+    const impl = (async (url: string) => {
+      seen.push(url);
+      const moved = url.includes('/agents/actions/');
+      return {
+        ok: !moved,
+        status: moved ? 404 : 200,
+        json: async () => ({ actionId: 'a1', versionId: 'urn:v1', created: true }),
+        text: async () => 'Cannot POST',
+      };
+    }) as unknown as typeof fetch;
+    const r = await importActionDraft(LIST, {
+      baseUrl: 'https://api.example.test', apiKey: 'k', signatureSecret: 's', did: 'did:key:zA', name: 'x', fetchImpl: impl,
+    });
+    expect(seen).toEqual([
+      'https://api.example.test/agents/actions/did%3Akey%3AzA',
+      'https://api.example.test/agents/did%3Akey%3AzA/actions',
+    ]);
+    expect(r.actionId).toBe('a1');
+  });
+
+  it('reports the first refusal when both paths answer 404 — the DID is not this organization\'s agent', async () => {
+    const impl = (async (url: string) => ({
+      ok: false,
+      status: 404,
+      json: async () => ({}),
+      text: async () => (url.includes('/agents/actions/') ? 'agent not found' : 'Cannot POST'),
+    })) as unknown as typeof fetch;
+    await expect(
+      importActionDraft(LIST, {
+        baseUrl: 'https://api.example.test', apiKey: 'k', signatureSecret: 's', did: 'did:key:zA', name: 'x', fetchImpl: impl,
+      }),
+    ).rejects.toThrow(/HTTP 404 — agent not found/);
   });
 
   it('sends NO rules and NO userParams — policy is the org\'s to author', async () => {
