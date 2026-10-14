@@ -79,8 +79,9 @@ export class MiniPlatformClient {
    * `ACTOR_REGISTERED`, and returns the first snapshot.
    */
   async join(name: string, key: ViaAgentKey): Promise<JoinResult> {
-    const { regNonce } = await this.post<{ regNonce: string }>('/api/register-challenge', {});
-    const evidence = await key.evidence(regNonce);
+    // `aud` is the DID the key's proof names (§16.5); a platform that predates it sends none.
+    const { regNonce, aud = '' } = await this.post<{ regNonce: string; aud?: string }>('/api/register-challenge', {});
+    const evidence = await key.evidence(regNonce, aud);
     // `cnf` rides alongside: ConfinementEvidence proves where a key lives, it does not carry
     // the key. For attestation the platform re-derives it from the document and cross-checks.
     return this.post('/api/join', { name, cnf: { jwk: key.publicJwk }, evidence, regNonce });
@@ -136,8 +137,8 @@ export class MiniPlatformClient {
    * The mandate does not change — that is the point.
    */
   async rotateKey(did: string, newKey: ViaAgentKey): Promise<{ keyId: string; predecessorId: string }> {
-    const { regNonce } = await this.post<{ regNonce: string }>('/api/register-challenge', {});
-    const evidence = await newKey.evidence(regNonce);
+    const { regNonce, aud = '' } = await this.post<{ regNonce: string; aud?: string }>('/api/register-challenge', {});
+    const evidence = await newKey.evidence(regNonce, aud);
     return this.post('/api/actor/rotate', { did, evidence, regNonce });
   }
 
@@ -162,8 +163,9 @@ export class MiniPlatformClient {
     validUntil?: string;
   }): Promise<{ mandate: ViaMandateCredential; childDid: string; childKeyId: string }> {
     const { nonce, aud } = await this.post<{ nonce: string; aud: string }>('/api/delegate-challenge', {});
-    const { regNonce } = await this.post<{ regNonce: string }>('/api/register-challenge', {});
-    const evidence = await input.childKey.evidence(regNonce);
+    const reg = await this.post<{ regNonce: string; aud?: string }>('/api/register-challenge', {});
+    const regNonce = reg.regNonce;
+    const evidence = await input.childKey.evidence(regNonce, reg.aud ?? '');
     const spec = { tools: input.tools, userParamValues: input.userParamValues, ...(input.validUntil ? { validUntil: input.validUntil } : {}) };
     // The thumbprint comes from the KEY, not the evidence: `ConfinementEvidence` carries only what
     // proves confinement, never the key itself (an attestation's key is derived from the document).

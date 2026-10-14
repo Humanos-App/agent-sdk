@@ -10,6 +10,11 @@ import {
   softwareKey,
 } from '../src/key-provider.js';
 import { actionHash, decodePoP, jwkThumbprint, verifyPoPSignature } from '../src/sdk.js';
+// The verifier's half, from the protocol package itself: what the platform runs on this evidence.
+import { createRegChallengeStore, registerAgentKey, registerChallenge } from '@humanos/via-sdk-v03';
+
+/** The platform DID a registration challenge returns as `aud` (§16.5). */
+const AUD = 'did:web:verifier.test';
 
 describe('key providers — where the key lives is what the rung can be', () => {
   it('a delegated PoP exposes no private key and is a via-pop+jwt the protocol SDK verifies (A1–A3, A6)', async () => {
@@ -34,19 +39,42 @@ describe('key providers — where the key lives is what the rung can be', () => 
   });
 
   it('evidence is the SDK\'s ConfinementEvidence, discriminated on `type`, bound to the nonce where it can be', async () => {
-    expect(await (await softwareKey()).evidence('nonce')).toEqual({ type: 'none' });
-    expect(await (await deviceSelfKey()).evidence('nonce')).toEqual({ type: 'device-self', nonExportable: true });
-    const custody = await (await custodialKey('sim-kms')).evidence('nonce');
+    expect(await (await softwareKey()).evidence('nonce', AUD)).toMatchObject({ type: 'device-self' });
+    expect(await (await deviceSelfKey()).evidence('nonce', AUD)).toMatchObject({ type: 'device-self', nonExportable: true });
+    const custody = await (await custodialKey('sim-kms')).evidence('nonce', AUD);
     expect(custody).toMatchObject({ type: 'custody', ref: { provider: 'sim-kms', keySpec: 'ECC_NIST_P256' } });
-    const eat = await (await attestedKey()).evidence('bm9uY2U');
+    const eat = await (await attestedKey()).evidence('bm9uY2U', AUD);
     expect(eat).toMatchObject({ type: 'attestation-eat' });
     expect(typeof (eat as { docB64: string }).docB64).toBe('string');
     expect((eat as { docB64: string }).docB64.length).toBeGreaterThan(100);
   });
 
+  // §16.5 (2026-10-14): every key the agent holds proves it is held — the protocol SDK refuses one that does not.
+  it.each([
+    ['software', softwareKey, ['pop', 'self']],
+    ['device-self', deviceSelfKey, ['pop', 'self']],
+    ['custodial', () => custodialKey('sim-kms'), ['pop', 'custodial']],
+    ['attested, root pinned', attestedKey, ['hardware', 'attested']],
+    ['attested, root NOT pinned — degraded, held by its proof', forgedAttestedKey, ['pop', 'self']],
+  ] as const)('the protocol SDK registers what each provider sends — %s', async (_label, make, rung) => {
+    const key = await make();
+    const store = createRegChallengeStore();
+    const { regNonce } = await registerChallenge({ store });
+    const res = await registerAgentKey(
+      { cnf: { jwk: key.publicJwk }, evidence: await key.evidence(regNonce, AUD), regNonce },
+      {
+        store,
+        audience: AUD,
+        describeKey: simKmsDescribeKey,
+        nitroRoots: { device: [], hardware: [await attestationRootPem()] },
+      },
+    );
+    expect(res.ok && [res.assurance, res.binding]).toEqual(rung);
+  });
+
   it('the custodial rung is an ORACLE fact: the evidence is a reference the verifier resolves, not a self-report', async () => {
     const key = await custodialKey();
-    const ev = await key.evidence('n');
+    const ev = await key.evidence('n', AUD);
     if (ev.type !== 'custody') throw new Error('expected custody evidence');
     const described = simKmsDescribeKey(ev.ref);
     expect(described).toMatchObject({ exportable: false, keyId: ev.ref.keyId });
@@ -63,7 +91,7 @@ describe('key providers — where the key lives is what the rung can be', () => 
     const forged = await forgedAttestedKey();
     expect(genuine.claimedAssurance).toBe('hardware');
     expect(forged.claimedAssurance).toBe('hardware'); // it CLAIMS the same — the claim is not the rung
-    const [g, f] = await Promise.all([genuine.evidence('bm9uY2U'), forged.evidence('bm9uY2U')]);
+    const [g, f] = await Promise.all([genuine.evidence('bm9uY2U', AUD), forged.evidence('bm9uY2U', AUD)]);
     expect((g as { docB64: string }).docB64).not.toBe((f as { docB64: string }).docB64);
   });
 });

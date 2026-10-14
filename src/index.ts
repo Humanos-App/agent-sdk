@@ -12,6 +12,7 @@
 // is exactly what `registerAgentKey` validates.
 export {
   softwareKey,
+  registrationProof,
   deviceSelfKey,
   custodialKey,
   attestedKey,
