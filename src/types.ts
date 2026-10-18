@@ -24,6 +24,10 @@ export interface VerifyOutcome {
    * approves this exact call, and the id to present once they have.
    */
   stepUp?: StepUpRef;
+  /** v0.3 §20.3 — what governed the decision: `rules`, `semantic`, `none`, or — with no mandate — `policy`. */
+  enforcement?: string;
+  /** v0.3 §21.3 — the organization's policy version the call was checked against. */
+  policyDigest?: string;
 }
 
 /** Aggregate exposure metering config (PRD §5.5) — declared at publish time. */
@@ -50,6 +54,37 @@ export interface ChallengeGrant {
   nonce: string;
   aud: string;
   ttlMs: number;
+}
+
+/** v0.3 §21.4 — a challenge for a call with no mandate: scoped to the agent, naming the policy its PoP binds. */
+export interface PolicyChallengeGrant extends ChallengeGrant {
+  policy: string;
+}
+
+/** v0.3 §21.4 — a call with no mandate, presented to be decided on the organization's policy. */
+export interface PolicyVerifyInput {
+  /** The organization's policy, as the challenge named it: the PoP binds it in place of a mandate. */
+  policy: string;
+  /** The agent making the call — for a credential that is not the agent's own (an organization's key). */
+  agentDid?: string;
+  tool: string;
+  /** Full executionParams INCLUDING the `tool` discriminator — must equal the PoP-hashed params. */
+  params: Record<string, unknown>;
+  pop: string;
+  /** v0.3 §21.3 — an APPROVED step-up one of the policy's approvers gave exactly this call, by id. */
+  stepUpId?: string;
+  now?: Date;
+}
+
+/** v0.3 §21.4 — the outcome of a call made with no mandate (§2.1, the policy in place of the mandate). */
+export interface PolicyReportOutcomeInput {
+  policy: string;
+  agentDid?: string;
+  decisionEventId: string;
+  outcome: 'completed' | 'failed';
+  error?: string;
+  pop: string;
+  now?: Date;
 }
 
 export interface VerifyInput {
@@ -81,6 +116,14 @@ export interface GuardVerifier {
   challenge(input: { mandateId: string }): ChallengeGrant | Promise<ChallengeGrant>;
   verify(input: VerifyInput): VerifyOutcome | Promise<VerifyOutcome>;
   reportOutcome(input: ReportOutcomeInput): Promise<{ recorded: ViaEvent } | { rejected: string }> | { recorded: ViaEvent } | { rejected: string };
+  /**
+   * v0.3 §21.4 — a call with no mandate, decided on the organization's policy. Optional: a verifier that has
+   * none of the three verifies mandates only, and a guard with no mandate refuses it. `challengeUnderPolicy`
+   * answers `refused` (`mandate_required`) when the organization has published no policy.
+   */
+  challengeUnderPolicy?(input: { agentDid?: string }): PolicyChallengeGrant | { refused: string } | Promise<PolicyChallengeGrant | { refused: string }>;
+  verifyUnderPolicy?(input: PolicyVerifyInput): VerifyOutcome | Promise<VerifyOutcome>;
+  reportOutcomeUnderPolicy?(input: PolicyReportOutcomeInput): Promise<{ recorded: unknown } | { rejected: string }> | { recorded: unknown } | { rejected: string };
 }
 
 // ── MCP shapes (the connector's tool surface) ────────────────────────────────
@@ -111,4 +154,6 @@ export interface StepUpRef {
   method?: string;
   expiresAt?: string;
   status?: string;
+  /** v0.3 §21.3 — `policy`: the organization's approvers decide it in the dashboard, not the grantor. */
+  trigger?: 'policy';
 }

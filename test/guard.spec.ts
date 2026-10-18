@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { ViaDeniedError, ViaGuard } from '../src/guard.js';
 import { softwareKey } from '../src/key-provider.js';
-import { actionHash, decodePoP, jwkThumbprint, verifyPoPSignature } from '../src/sdk.js';
+import { actionHash, decodePoP, jwkThumbprint, policyActionHash, verifyPoPSignature } from '../src/sdk.js';
 import type { ViaMandateCredential } from '../src/sdk.js';
-import type { GuardVerifier, VerifyInput, ReportOutcomeInput, VerifyOutcome } from '../src/types.js';
+import type {
+  GuardVerifier,
+  PolicyReportOutcomeInput,
+  PolicyVerifyInput,
+  ReportOutcomeInput,
+  VerifyInput,
+  VerifyOutcome,
+} from '../src/types.js';
 
 // The guard's verifier seam, played by a recorder: it hands out single-use nonces, answers what
 // the test scripts, and keeps every PoP it was shown so the test can check what the guard signed.
@@ -168,5 +175,61 @@ describe('ViaGuard — step-up by id (v0.3 §17.4)', () => {
     const { g, verified } = await guard(allow);
     await g.call('wire', { amount: 5 }, () => 'sent', { stepUpId: 'su-9' });
     expect(verified[0]!.stepUpId).toBe('su-9');
+  });
+});
+
+describe('ViaGuard — a call with no mandate, on the organization policy (v0.3 §21.4)', () => {
+  const POLICY = 'urn:via:policy:p1';
+  /** A verifier that verifies on a policy: it names it in each challenge, and records what it was shown. */
+  function policyVerifier(answer: VerifyOutcome | { refused: string }) {
+    const verified: PolicyVerifyInput[] = [];
+    const reported: PolicyReportOutcomeInput[] = [];
+    const verifier: GuardVerifier = {
+      challenge: () => {
+        throw new Error('no mandate: the mandate challenge is never asked');
+      },
+      verify: () => {
+        throw new Error('no mandate: the mandate verify is never asked');
+      },
+      reportOutcome: () => ({ rejected: 'no mandate' }),
+      challengeUnderPolicy: (input) =>
+        'refused' in answer ? answer : { nonce: `n-${verified.length + reported.length}`, aud: 'did:web:org', ttlMs: 60_000, policy: POLICY, ...input },
+      verifyUnderPolicy: (input) => {
+        verified.push(input);
+        return answer as VerifyOutcome;
+      },
+      reportOutcomeUnderPolicy: (input) => {
+        reported.push(input);
+        return { recorded: 'urn:via:event:o' };
+      },
+    };
+    return { verifier, verified, reported };
+  }
+
+  it("proves the call over {policy, tool, params}, runs it on an allow, and reports its outcome on the policy", async () => {
+    const agentKey = await softwareKey();
+    const { verifier, verified, reported } = policyVerifier({ decision: 'allow', evaluations: [], decisionEventId: 'urn:via:event:d' });
+    const g = new ViaGuard({ agentKey, verifier, agentDid: 'did:web:humanos.tech:agent:a' });
+
+    const out = await g.call('kb_search', { q: 'refunds' }, () => 'found');
+
+    expect(out).toMatchObject({ decision: 'allow', result: 'found' });
+    expect(verified[0]).toMatchObject({ policy: POLICY, agentDid: 'did:web:humanos.tech:agent:a', tool: 'kb_search' });
+    expect(payloadOf(verified[0]!.pop).payload.action_hash).toBe(policyActionHash(POLICY, 'kb_search', { q: 'refunds', tool: 'kb_search' }));
+    expect(reported[0]).toMatchObject({ policy: POLICY, decisionEventId: 'urn:via:event:d', outcome: 'completed' });
+  });
+
+  it('denies mandate_required, running nothing, where the organization has published no policy', async () => {
+    const { verifier, verified } = policyVerifier({ refused: 'mandate_required' });
+    const g = new ViaGuard({ agentKey: await softwareKey(), verifier });
+    let ran = 0;
+    await expect(g.call('kb_search', {}, () => ran++)).rejects.toMatchObject({ reason: 'mandate_required' });
+    expect(ran).toBe(0);
+    expect(verified).toEqual([]);
+  });
+
+  it('refuses to be built with no mandate on a verifier that cannot verify on a policy', async () => {
+    const { verifier } = recorder(allow);
+    expect(() => new ViaGuard({ agentKey: {} as never, verifier })).toThrow(/organization's policy/);
   });
 });

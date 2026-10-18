@@ -41,6 +41,13 @@ export function defaultPlainReason(r?: string): string {
     actor_retired: 'the connector has been retired',
     agent_key_revoked: 'the connector’s key has been revoked',
     actor_snapshot_stale: 'the connector’s identity record is stale and was refused',
+    // v0.3 §0.6.1 — the tools an action covers
+    tool_not_covered: 'this tool is not one the permission covers',
+    required_param_missing: 'a value a rule needs to check was left out',
+    // v0.3 §21 — the organization's policy
+    policy_denied: 'the organization’s policy does not allow it',
+    mandate_required: 'it needs a person’s permission, and none covers it',
+    stepup_required: 'it needs an approval nobody is named to give',
     // v0.3 delegation
     tool_not_delegated: 'this action was not delegated to this sub-agent',
     parent_not_active: 'the delegating parent’s permission is no longer active',
