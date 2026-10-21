@@ -27,6 +27,9 @@ Install `@humanos/via-sdk-v03` 0.4.6 with it (the Install snippet in the README)
   `mandate_required`, `stepup_required`.
 - `VerifyOutcome` carries `enforcement` and `policyDigest`; `StepUpRef` carries `trigger: "policy"` for a step-up
   the organization's approvers decide in the dashboard, whose `approveLink` is that page.
+- A `mandate_required` deny may name the actions the policy needs the mandate to be under (v0.3 §21.3):
+  `VerifyOutcome.under`, `ViaDeniedError.under` and, in `observe`, `GuardCallOutcome.under`. The proxy tells the
+  agent to ask the person for a mandate under one of them, a call under another mandate included.
 
 **Since 0.1.2, never tagged as 0.1.3**
 

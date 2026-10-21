@@ -228,6 +228,13 @@ describe('ViaGuard — a call with no mandate, on the organization policy (v0.3 
     expect(verified).toEqual([]);
   });
 
+  it('names the actions a mandate must be under when the policy says which', async () => {
+    const under = [{ id: 'urn:via:action:credit' }];
+    const { verifier } = policyVerifier({ decision: 'deny', reason: 'mandate_required', evaluations: [], under });
+    const g = new ViaGuard({ agentKey: await softwareKey(), verifier });
+    await expect(g.call('issue_credit', {}, () => 'ran')).rejects.toMatchObject({ reason: 'mandate_required', under });
+  });
+
   it('refuses to be built with no mandate on a verifier that cannot verify on a policy', async () => {
     const { verifier } = recorder(allow);
     expect(() => new ViaGuard({ agentKey: {} as never, verifier })).toThrow(/organization's policy/);

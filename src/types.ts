@@ -28,6 +28,11 @@ export interface VerifyOutcome {
   enforcement?: string;
   /** v0.3 §21.3 — the organization's policy version the call was checked against. */
   policyDigest?: string;
+  /**
+   * v0.3 §21.3 — with `mandate_required`: the actions the organization's policy needs the mandate to be under, any one
+   * of them. Ask the person for a mandate under one.
+   */
+  under?: { id: string }[];
 }
 
 /** Aggregate exposure metering config (PRD §5.5) — declared at publish time. */

@@ -67,7 +67,7 @@ const GMAIL_MANDATE = {
 };
 
 /** v0.3 §21.4 — the organization's policy, as the stand-in decides a call with no mandate: per tool. */
-type StandinPolicy = Record<string, 'allow' | 'deny'>;
+type StandinPolicy = Record<string, 'allow' | 'deny' | { under: string }>;
 const POLICY_URN = 'urn:via:policy:p1';
 
 function humanos(held = [SLACK_MANDATE, GMAIL_MANDATE], policy?: StandinPolicy) {
@@ -100,7 +100,13 @@ function humanos(held = [SLACK_MANDATE, GMAIL_MANDATE], policy?: StandinPolicy) 
         return answer(
           effect === 'allow'
             ? { decision: 'allow', evaluations: [], enforcement: 'policy', decisionEventId: `urn:via:event:p-${verified.length}` }
-            : { decision: 'deny', reason: effect === 'deny' ? 'policy_denied' : 'mandate_required', evaluations: [], enforcement: 'policy' },
+            : {
+                decision: 'deny',
+                reason: effect === 'deny' ? 'policy_denied' : 'mandate_required',
+                evaluations: [],
+                enforcement: 'policy',
+                ...(typeof effect === 'object' ? { under: [{ id: effect.under }] } : {}),
+              },
         );
       }
       if (name === 'verify') {
@@ -294,6 +300,11 @@ describe('a call no mandate covers: the organization policy decides (v0.3 §21.4
     ['the policy refuses it', { slack_create_canvas: 'deny' } as StandinPolicy, /Blocked by VIA: the organization’s policy does not allow it/],
     ['the policy leaves it to a person', {} as StandinPolicy, /No mandate covers slack_create_canvas \(Slack\)/],
     ['the organization has published no policy', undefined, /No mandate covers slack_create_canvas \(Slack\)/],
+    [
+      'the policy needs a mandate under a named action',
+      { slack_create_canvas: { under: 'urn:via:action:canvas' } } as StandinPolicy,
+      /needs a person's mandate under urn:via:action:canvas for it: ask the person for one/,
+    ],
   ])('sends nothing when %s', async (_case, policy, said) => {
     const { call, slack } = await setup({ ...(policy ? { policy } : {}) });
     const out = await call('slack_create_canvas', { title: 'Q4' });

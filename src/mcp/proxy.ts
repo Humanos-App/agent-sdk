@@ -293,9 +293,12 @@ export async function startViaMcpProxy(cfg: ViaMcpProxyConfig): Promise<ViaMcpPr
     }
     return g;
   };
-  const noMandate = (tool: ProxiedTool): string =>
-    `No mandate covers ${tool.upstreamName} (${tool.service}). Nothing was sent to ${tool.service}. ` +
-    `A mandate comes from a person: the organization publishes a guardrail for ${tool.service} and the person accepts one under it.`;
+  const noMandate = (tool: ProxiedTool, under?: { id: string }[], held?: boolean): string =>
+    `${held ? 'The mandate this agent holds does not cover' : 'No mandate covers'} ${tool.upstreamName} (${tool.service}). ` +
+    `Nothing was sent to ${tool.service}. ` +
+    (under?.length
+      ? `The organization's policy needs a person's mandate under ${under.map((u) => u.id).join(' or ')} for it: ask the person for one.`
+      : `A mandate comes from a person: the organization publishes a guardrail for ${tool.service} and the person accepts one under it.`);
 
   const callTool = async (name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> => {
     const tool = byName.get(name);
@@ -335,7 +338,10 @@ export async function startViaMcpProxy(cfg: ViaMcpProxyConfig): Promise<ViaMcpPr
       }
       pending.delete(key);
       // The policy leaves the tool to a person's mandate, or the organization has none: as with no policy at all.
-      if (e instanceof ViaDeniedError && !h && e.reason === 'mandate_required') return text(noMandate(tool), true);
+      // Under a mandate, the policy may name the one the tool needs (`under`, v0.3 §21.3).
+      if (e instanceof ViaDeniedError && e.reason === 'mandate_required' && (!h || e.under?.length)) {
+        return text(noMandate(tool, e.under, !!h), true);
+      }
       if (e instanceof ViaDeniedError) return text(`Blocked by VIA: ${plainReason(e.reason)}. Nothing was sent to ${tool.service}. Do not retry.`, true);
       if (e instanceof UpstreamToolError) return { content: e.result.content, isError: true };
       return text(`Error: ${e instanceof Error ? e.message : String(e)}`, true);

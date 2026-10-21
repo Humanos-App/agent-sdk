@@ -10,6 +10,8 @@ export class ViaDeniedError extends Error {
   constructor(
     public readonly reason: string | undefined,
     public readonly evaluations: RuleEvaluation[],
+    /** v0.3 §21.3 — with `mandate_required`: the actions a mandate must be under, any one of them. */
+    public readonly under?: { id: string }[],
   ) {
     super(`via: tool call denied (${reason ?? 'unknown'})`);
     this.name = 'ViaDeniedError';
@@ -24,6 +26,8 @@ export interface GuardCallOutcome<T = unknown> {
   result?: T;
   /** True when a deny was recorded but the tool executed anyway (`observe` mode, R5b). */
   observed?: boolean;
+  /** On a `mandate_required` deny: the actions a mandate must be under, any one of them (v0.3 §21.3). */
+  under?: { id: string }[];
 }
 
 export interface GuardOptions {
@@ -163,10 +167,11 @@ export class ViaGuard {
         reason: outcome.reason,
         evaluations: outcome.evaluations,
         observed: true,
+        ...(outcome.under ? { under: outcome.under } : {}),
         result: await this.execute<T>(args, impl, decisionId, outcome),
       };
     }
-    throw new ViaDeniedError(outcome.reason, outcome.evaluations);
+    throw new ViaDeniedError(outcome.reason, outcome.evaluations, outcome.under);
   }
 
   /**
