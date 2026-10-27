@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.1
+
+- The bundled protocol SDK is sdk-v03 0.6.2 (the README's Install snippet): the same API, built with
+  `@peculiar/x509` 2, tsup 9 and `@sd-jwt` 0.23. The peer range stays `^0.6.1`.
+- `mintNitroCa` and `buildCoseAttestation` come from its `agent/sim` entry, which now loads the
+  `reflect-metadata` polyfill that x509 2 needs, so importing the SDK installs the Reflect metadata API.
+
 ## 0.2.0 — the organization's policy
 
 Install `@humanos/via-sdk-v03` 0.6.1 with it (the Install snippet in the README): the peer range is `^0.6.1`.
