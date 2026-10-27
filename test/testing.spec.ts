@@ -74,6 +74,26 @@ describe('createTestVerifier', () => {
     await expect(guard.call('pay', { amount: 5 }, () => 'ok')).rejects.toMatchObject({ reason: 'stepup_declined' });
   });
 
+  it("reads the action version's constants (v0.3 §0.6.1) in the rules it evaluates", async () => {
+    const key = await softwareKey();
+    const t = createTestVerifier({
+      rules: [{ name: 'house_cap', expression: 'executionParams.amount <= constants.house_cap' }],
+      userParams: {},
+      constants: { house_cap: 100 },
+      agentKey: key,
+    });
+    const guard = new ViaGuard({ mandate: t.mandate, agentKey: key, verifier: t.verifier, compiled: t.compiled });
+    expect((await guard.call('pay', { amount: 100 }, () => 'paid')).decision).toBe('allow');
+    await expect(guard.call('pay', { amount: 101 }, () => 'paid')).rejects.toMatchObject({ reason: 'rule_failed' });
+  });
+
+  it('answers a challenge as §16.11 does: its life in seconds, from iat', async () => {
+    const { t } = await setup();
+    const grant = await t.verifier.challenge({ mandateId: t.mandate.id });
+    expect(grant).toEqual({ nonce: expect.any(String), aud: 'did:web:verifier.test', ttl: 60, iat: expect.any(Number) });
+    expect(Math.abs(grant.iat - Date.now() / 1000)).toBeLessThan(5);
+  });
+
   it('re-exports the rule evaluator and the CEL syntax check, so a builder can test proposed rules', () => {
     expect(validateCelExpression(rules[0]!.expression)).toEqual({ ok: true });
     expect(evaluateRules(rules, { userParams: { limit: 1 }, executionParams: { tool: 'pay', amount: 2 } }).decision).toBe('deny');

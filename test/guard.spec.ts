@@ -23,7 +23,7 @@ function recorder(script: (input: VerifyInput, n: number) => VerifyOutcome) {
     challenge: () => {
       const nonce = `n-${++issued}`;
       nonces.add(nonce);
-      return { nonce, aud: 'did:web:humanos.tech:org:test', ttlMs: 60_000 };
+      return { nonce, aud: 'did:web:humanos.tech:org:test', ttl: 60, iat: 1_757_160_000 };
     },
     verify: (input) => {
       verified.push(input);
@@ -193,7 +193,7 @@ describe('ViaGuard — a call with no mandate, on the organization policy (v0.3 
       },
       reportOutcome: () => ({ rejected: 'no mandate' }),
       challengeUnderPolicy: (input) =>
-        'refused' in answer ? answer : { nonce: `n-${verified.length + reported.length}`, aud: 'did:web:org', ttlMs: 60_000, policy: POLICY, ...input },
+        'refused' in answer ? answer : { nonce: `n-${verified.length + reported.length}`, aud: 'did:web:org', ttl: 60, iat: 1_757_160_000, policy: POLICY, ...input },
       verifyUnderPolicy: (input) => {
         verified.push(input);
         return answer as VerifyOutcome;

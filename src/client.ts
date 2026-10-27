@@ -24,7 +24,7 @@ export interface MockActorCopy {
   validUntil?: string;
 }
 import { buildDelegatedPoP, type ViaAgentKey } from './key-provider.js';
-import type { CompiledLike, ExposurePolicy, ExtractedDraft, GuardVerifier, McpToolsList, VerifyOutcome } from './types.js';
+import type { ChallengeGrant, CompiledLike, ExposurePolicy, ExtractedDraft, GuardVerifier, McpToolsList, VerifyOutcome } from './types.js';
 
 /**
  * The EXACT params object both sides hash for the delegation PoP (A6 binding):
@@ -200,7 +200,7 @@ export class MiniPlatformClient {
   /** The HTTP `GuardVerifier` — plug into `ViaGuard` unchanged; only PoPs travel. */
   verifierFor(mandateId: string): GuardVerifier {
     return {
-      challenge: () => this.post<{ nonce: string; aud: string; ttlMs: number }>('/api/challenge', { mandateId }),
+      challenge: () => this.post<ChallengeGrant>('/api/challenge', { mandateId }),
       verify: (input) =>
         this.post<VerifyOutcome>('/api/verify', {
           mandateId,

@@ -55,10 +55,14 @@ export interface CompiledLike {
   actionVersion: { rules: ActionRule[] };
 }
 
+/** v0.3 §16.11 — the verifier's challenge: a single-use nonce, the DID the PoP names as `aud`, and the nonce's life. */
 export interface ChallengeGrant {
   nonce: string;
   aud: string;
-  ttlMs: number;
+  /** The nonce's life in seconds, from `iat`. */
+  ttl: number;
+  /** When it was issued, in epoch seconds. */
+  iat: number;
 }
 
 /** v0.3 §21.4 — a challenge for a call with no mandate: scoped to the agent, naming the policy its PoP binds. */

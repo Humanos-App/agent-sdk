@@ -30,10 +30,10 @@
     "vendor:sdk-v03": "sh scripts/vendor-sdk-v03.sh"
   },
   "peerDependencies": {
-    "@humanos/via-sdk-v03": "^0.4.6"
+    "@humanos/via-sdk-v03": "^0.6.1"
   },
   "devDependencies": {
-    "@humanos/via-sdk-v03": "file:vendor/humanos-via-sdk-v03-0.4.6.tgz",
+    "@humanos/via-sdk-v03": "file:vendor/humanos-via-sdk-v03-0.6.1.tgz",
     "@types/node": "^22.20.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.9"

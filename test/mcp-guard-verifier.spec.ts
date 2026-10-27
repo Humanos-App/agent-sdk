@@ -27,9 +27,9 @@ const mandate = { id: 'did:web:humanos.tech::credential:abc' } as ViaMandateCred
 
 describe('McpGuardVerifier — the GuardVerifier over the connector', () => {
   it('challenge: forwards the mandate id and returns the grant', async () => {
-    const { client, calls } = fakeClient({ challenge: json({ nonce: 'agent_x_1_2', aud: 'did:key:zOrg', ttlMs: 300000 }) });
+    const { client, calls } = fakeClient({ challenge: json({ nonce: 'agent_x_1_2', aud: 'did:key:zOrg', ttl: 300, iat: 1_757_160_000 }) });
     const grant = await new McpGuardVerifier(client).challenge({ mandateId: mandate.id });
-    expect(grant).toEqual({ nonce: 'agent_x_1_2', aud: 'did:key:zOrg', ttlMs: 300000 });
+    expect(grant).toEqual({ nonce: 'agent_x_1_2', aud: 'did:key:zOrg', ttl: 300, iat: 1_757_160_000 });
     expect(calls[0]).toEqual({ name: 'challenge', args: { mandateId: mandate.id } });
   });
 
@@ -120,7 +120,7 @@ describe('McpGuardVerifier — a step-up is presented by its id', () => {
 
 describe('McpGuardVerifier — a call with no mandate (v0.3 §21.4)', () => {
   it('challenges for the agent, and reads a missing policy as mandate_required, not a fault', async () => {
-    const named = fakeClient({ challenge: json({ nonce: 'agent_a|p_1_2', aud: 'did:key:zOrg', ttlMs: 300000, policy: 'urn:via:policy:p' }) });
+    const named = fakeClient({ challenge: json({ nonce: 'agent_a|p_1_2', aud: 'did:key:zOrg', ttl: 300, iat: 1_757_160_000, policy: 'urn:via:policy:p' }) });
     expect(await new McpGuardVerifier(named.client).challengeUnderPolicy({ agentDid: 'did:a' })).toMatchObject({ policy: 'urn:via:policy:p' });
     expect(named.calls[0]).toEqual({ name: 'challenge', args: { agentDid: 'did:a' } });
 

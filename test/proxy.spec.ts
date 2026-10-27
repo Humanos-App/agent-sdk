@@ -91,7 +91,7 @@ function humanos(held = [SLACK_MANDATE, GMAIL_MANDATE], policy?: StandinPolicy) 
       if (name === 'challenge') {
         // With no mandate, the connector names the organization's policy — or, with none, every call needs a mandate.
         if (!args.mandateId && !policy) return { text: 'mandate_required: this organization has published no policy', isError: true };
-        return answer({ nonce: `n-${++n}`, aud: 'did:web:org', ttlMs: 60_000, ...(args.mandateId ? {} : { policy: POLICY_URN }) });
+        return answer({ nonce: `n-${++n}`, aud: 'did:web:org', ttl: 60, iat: 1_757_160_000, ...(args.mandateId ? {} : { policy: POLICY_URN }) });
       }
       if (name === 'report_outcome') { reported.push(args); return answer({ recorded: { id: `urn:via:event:o-${reported.length}` } }); }
       if (name === 'verify' && !args.mandateId) {
