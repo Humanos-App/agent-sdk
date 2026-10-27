@@ -36,7 +36,7 @@
     "@humanos/via-sdk-v03": "file:vendor/humanos-via-sdk-v03-0.3.5.tgz",
     "@types/node": "^22.20.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.12"
   },
   "//boundary": "The protocol is the PACKAGE @humanos/via-sdk-v03 — a peer, so an agent that also verifies things itself shares one copy. It is not on a registry yet: this repo carries it in vendor/ (refresh with `npm run vendor:sdk-v03` inside the via-protocol checkout), and projects install it from there by URL (see README). `prepare` builds dist/ wherever the package is installed from git; consumers get dist/ via `exports`."
 }
