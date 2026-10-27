@@ -32,8 +32,8 @@ Neither package is on a registry yet. Install both from this repository, pinned 
 ```json
 {
   "dependencies": {
-    "@humanos/agent-sdk": "github:Humanos-App/agent-sdk#v0.1.2",
-    "@humanos/via-sdk-v03": "https://raw.githubusercontent.com/Humanos-App/agent-sdk/v0.1.2/vendor/humanos-via-sdk-v03-0.3.0.tgz"
+    "@humanos/agent-sdk": "github:Humanos-App/agent-sdk#v0.1.3",
+    "@humanos/via-sdk-v03": "https://raw.githubusercontent.com/Humanos-App/agent-sdk/v0.1.3/vendor/humanos-via-sdk-v03-0.3.5.tgz"
   }
 }
 ```

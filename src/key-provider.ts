@@ -14,7 +14,7 @@
  * JWK. The output is a standard `via-pop+jwt` the real SDK verifies unchanged —
  * upstream candidate: `buildPoP(payload, signer)`.
  */
-import { generateP256Key, signES256, jwkThumbprint, mintNitroCa, buildCoseAttestation } from './sdk.js';
+import { generateP256Key, signES256, jwkThumbprint, mintNitroCa, buildCoseAttestation, buildRegistrationProof } from './sdk.js';
 import type {
   Jwk,
   PopPayload,
@@ -36,14 +36,32 @@ export interface ViaAgentKey {
   /** ES256 over the given bytes — in-process for software, delegated for KMS/enclave. */
   sign(bytes: Uint8Array): Promise<Uint8Array>;
   /**
-   * Registration evidence bound to a platform-issued single-use nonce (§16.5).
+   * Registration evidence bound to a platform-issued single-use nonce (§16.5), carrying the key's
+   * own `proof` — a `via-reg+jwt` it signs over the nonce and `aud`, the platform DID the challenge
+   * returned. Every key the agent holds proves it is held (decided 2026-10-14): without it anyone
+   * could register a public key they do not hold and lock its owner out.
    *
    * This is `ConfinementEvidence` — the SAME type `registerAgentKey` validates. It used to be a
    * parallel `RegistrationEvidence` declared here, discriminated on `kind` where the validator
    * switches on `type`, so nothing this package produced could be validated by the protocol SDK
    * at all. The demo passed because the mock platform carried its own matching validator.
    */
-  evidence(regNonce: string): Promise<ConfinementEvidence>;
+  evidence(regNonce: string, aud: string): Promise<ConfinementEvidence>;
+}
+
+/**
+ * The key's `via-reg+jwt` over the challenge (§16.5), signed through `sign()` — so a key that never
+ * leaves its KMS or enclave proves possession the same way an in-process one does.
+ */
+export function registrationProof(
+  key: Pick<ViaAgentKey, 'publicJwk' | 'sign'>,
+  regNonce: string,
+  aud: string,
+): Promise<string> {
+  return buildRegistrationProof(
+    { cnf: { jkt: jwkThumbprint(key.publicJwk) }, aud, nonce: regNonce, iat: Math.floor(Date.now() / 1000) },
+    (bytes) => key.sign(bytes),
+  );
 }
 
 const te = new TextEncoder();
@@ -66,13 +84,15 @@ export async function buildDelegatedPoP(payload: PopPayload, sign: (bytes: Uint8
 /** The lowest rung: a software key generated and held in the agent process. */
 export async function softwareKey(): Promise<ViaAgentKey> {
   const kp = await generateP256Key();
-  return {
+  const key: ViaAgentKey = {
     publicJwk: kp.publicJwk,
     claimedAssurance: 'pop',
     claimedBinding: 'self',
     sign: (bytes) => signES256(bytes, kp.privateJwk),
-    evidence: (_regNonce) => Promise.resolve({ type: 'none' }),
+    // Possession and nothing more: `device-self` with the key's proof (`none` is refused, §16.5).
+    evidence: async (regNonce, aud) => ({ type: 'device-self', proof: await registrationProof(key, regNonce, aud) }),
   };
+  return key;
 }
 
 /**
@@ -96,7 +116,7 @@ export async function custodialKey(provider = 'sim-kms'): Promise<ViaAgentKey> {
   // non-exportability. The evidence carries only the REFERENCE — the whole point of the
   // custodial rung is that the verifier asks the KMS rather than believing a self-report.
   SIM_KMS.set(ref.keyId, { exportable: false, publicJwk: kp.publicJwk, keyId: ref.keyId, keySpec: 'ECC_NIST_P256', origin: 'SIM_KMS' });
-  return {
+  const key: ViaAgentKey = {
     publicJwk: kp.publicJwk,
     // `pop/custodial`. An earlier version of this file claimed `hardware`, reasoning from what
     // `validateCustody` granted — but the SDK was the thing that was wrong, and the spec says so
@@ -109,8 +129,10 @@ export async function custodialKey(provider = 'sim-kms'): Promise<ViaAgentKey> {
     claimedAssurance: 'pop',
     claimedBinding: 'custodial',
     sign: (bytes) => signES256(bytes, kp.privateJwk), // "the KMS signs" — the caller never sees the key
-    evidence: (_regNonce) => Promise.resolve({ type: 'custody', ref }),
+    // The reference proves where the key lives; the proof, signed by the KMS, that the agent holds it.
+    evidence: async (regNonce, aud) => ({ type: 'custody', ref, proof: await registrationProof(key, regNonce, aud) }),
   };
+  return key;
 }
 
 // ---- the sim KMS (dev only) ----------------------------------------------------------
@@ -136,13 +158,18 @@ export function simKmsDescribeKey(ref: CustodyRef): KeyDescription | null {
  */
 export async function deviceSelfKey(): Promise<ViaAgentKey> {
   const kp = await generateP256Key();
-  return {
+  const key: ViaAgentKey = {
     publicJwk: kp.publicJwk,
     claimedAssurance: 'pop',
     claimedBinding: 'self',
     sign: (bytes) => signES256(bytes, kp.privateJwk),
-    evidence: (_regNonce) => Promise.resolve({ type: 'device-self', nonExportable: true }),
+    evidence: async (regNonce, aud) => ({
+      type: 'device-self',
+      nonExportable: true,
+      proof: await registrationProof(key, regNonce, aud),
+    }),
   };
+  return key;
 }
 
 // ---- the attestation root (dev only) -------------------------------------------------
@@ -180,12 +207,12 @@ export async function attestationRootPem(ca?: NitroCa): Promise<string> {
 export async function attestedKey(ca?: NitroCa): Promise<ViaAgentKey> {
   const authority = ca ?? (await devNitroCa());
   const kp = await generateP256Key();
-  return {
+  const key: ViaAgentKey = {
     publicJwk: kp.publicJwk,
     claimedAssurance: 'hardware',
     claimedBinding: 'attested',
     sign: (bytes) => signES256(bytes, kp.privateJwk),
-    evidence: async (regNonce) => ({
+    evidence: async (regNonce, aud) => ({
       type: 'attestation-eat',
       docB64: await buildCoseAttestation(authority, {
         publicKeyJwk: kp.publicJwk,
@@ -199,8 +226,12 @@ export async function attestedKey(ca?: NitroCa): Promise<ViaAgentKey> {
         // unreplayable against a different registration.
         nonceB64: regNonce,
       }),
+      // A verifier that does not pin this root degrades the quote, and an unanchored quote proves
+      // nothing about who holds the key — so the key's own proof rides along (§16.5).
+      proof: await registrationProof(key, regNonce, aud),
     }),
   };
+  return key;
 }
 
 /**

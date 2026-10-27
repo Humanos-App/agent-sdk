@@ -17,6 +17,7 @@ export type { Jwk, P256KeyPair } from '@humanos/via-sdk-v03';
 export { computeSRI } from '@humanos/via-sdk-v03';
 export { canonicalizeRFC8785 } from '@humanos/via-sdk-v03';
 export { buildPoP, actionHash, decodePoP, verifyPoPSignature } from '@humanos/via-sdk-v03';
+export { buildRegistrationProof } from '@humanos/via-sdk-v03';
 export type { PopPayload } from '@humanos/via-sdk-v03';
 export type {
   BoundKey,
