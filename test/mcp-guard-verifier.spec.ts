@@ -27,9 +27,9 @@ const mandate = { id: 'did:web:humanos.tech::credential:abc' } as ViaMandateCred
 
 describe('McpGuardVerifier — the GuardVerifier over the connector', () => {
   it('challenge: forwards the mandate id and returns the grant', async () => {
-    const { client, calls } = fakeClient({ challenge: json({ nonce: 'agent_x_1_2', aud: 'did:key:zOrg', ttlMs: 300000 }) });
+    const { client, calls } = fakeClient({ challenge: json({ nonce: 'agent_x_1_2', aud: 'did:key:zOrg', ttl: 300, iat: 1_757_160_000 }) });
     const grant = await new McpGuardVerifier(client).challenge({ mandateId: mandate.id });
-    expect(grant).toEqual({ nonce: 'agent_x_1_2', aud: 'did:key:zOrg', ttlMs: 300000 });
+    expect(grant).toEqual({ nonce: 'agent_x_1_2', aud: 'did:key:zOrg', ttl: 300, iat: 1_757_160_000 });
     expect(calls[0]).toEqual({ name: 'challenge', args: { mandateId: mandate.id } });
   });
 
@@ -115,5 +115,33 @@ describe('McpGuardVerifier — a step-up is presented by its id', () => {
     await new McpGuardVerifier(client).verify({ mandate: { id: 'urn:via:credential:m' } as never, tool: 't', params: { tool: 't' }, pop: 'p', stepUpSatisfied: true, stepUpId: 'su-1' });
     expect(calls[0]!.args).toMatchObject({ stepUpId: 'su-1' });
     expect(calls[0]!.args).not.toHaveProperty('stepUpSatisfied');
+  });
+});
+
+describe('McpGuardVerifier — a call with no mandate (v0.3 §21.4)', () => {
+  it('challenges for the agent, and reads a missing policy as mandate_required, not a fault', async () => {
+    const named = fakeClient({ challenge: json({ nonce: 'agent_a|p_1_2', aud: 'did:key:zOrg', ttl: 300, iat: 1_757_160_000, policy: 'urn:via:policy:p' }) });
+    expect(await new McpGuardVerifier(named.client).challengeUnderPolicy({ agentDid: 'did:a' })).toMatchObject({ policy: 'urn:via:policy:p' });
+    expect(named.calls[0]).toEqual({ name: 'challenge', args: { agentDid: 'did:a' } });
+
+    const none = fakeClient({ challenge: refusal('mandate_required: this organization has published no policy') });
+    expect(await new McpGuardVerifier(none.client).challengeUnderPolicy({})).toEqual({ refused: 'mandate_required' });
+
+    const fault = fakeClient({ challenge: refusal('No agent did:a is visible to this organization.') });
+    await expect(new McpGuardVerifier(fault.client).challengeUnderPolicy({ agentDid: 'did:a' })).rejects.toBeInstanceOf(McpVerifierError);
+  });
+
+  it('verifies and reports with the policy in place of the mandate id', async () => {
+    const { client, calls } = fakeClient({
+      verify: json({ decision: 'deny', reason: 'policy_denied', evaluations: [] }),
+      report_outcome: json({ recorded: 'urn:o' }),
+    });
+    const v = new McpGuardVerifier(client);
+    expect(await v.verifyUnderPolicy({ policy: 'urn:via:policy:p', agentDid: 'did:a', tool: 't', params: { tool: 't' }, pop: 'p' })).toMatchObject({ reason: 'policy_denied' });
+    await v.reportOutcomeUnderPolicy({ policy: 'urn:via:policy:p', decisionEventId: 'urn:d', outcome: 'completed', pop: 'p' });
+    expect(calls).toEqual([
+      { name: 'verify', args: { policy: 'urn:via:policy:p', agentDid: 'did:a', tool: 't', params: { tool: 't' }, pop: 'p' } },
+      { name: 'report_outcome', args: { policy: 'urn:via:policy:p', decisionEventId: 'urn:d', outcome: 'completed', pop: 'p' } },
+    ]);
   });
 });

@@ -100,6 +100,10 @@ export type {
   VerifyInput,
   ReportOutcomeInput,
   ChallengeGrant,
+  // v0.3 §21.4 — a call with no mandate, on the organization's policy.
+  PolicyChallengeGrant,
+  PolicyVerifyInput,
+  PolicyReportOutcomeInput,
   McpTool,
   McpToolsList,
   ExtractedDraft,

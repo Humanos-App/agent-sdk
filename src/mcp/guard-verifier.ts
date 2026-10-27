@@ -18,7 +18,17 @@
  */
 import type { ViaMcpClient } from './client.js';
 import type { ActionRule, ViaEvent, ViaMandateCredential } from '../sdk.js';
-import type { ChallengeGrant, CompiledLike, GuardVerifier, ReportOutcomeInput, VerifyInput, VerifyOutcome } from '../types.js';
+import type {
+  ChallengeGrant,
+  CompiledLike,
+  GuardVerifier,
+  PolicyChallengeGrant,
+  PolicyReportOutcomeInput,
+  PolicyVerifyInput,
+  ReportOutcomeInput,
+  VerifyInput,
+  VerifyOutcome,
+} from '../types.js';
 
 /** Raised when the connector could not answer a verifier call — distinct from a deny. */
 export class McpVerifierError extends Error {
@@ -73,13 +83,57 @@ export class McpGuardVerifier implements GuardVerifier {
     if (r.isError) throw new McpVerifierError('report_outcome', r.text);
     return parse<{ recorded: ViaEvent } | { rejected: string }>('report_outcome', r.text);
   }
+
+  /**
+   * v0.3 §21.4 — the connector's `challenge` with no mandate: scoped to the agent, naming the organization's
+   * policy. An organization that has published none answers `mandate_required`, which is a decision, not a fault.
+   */
+  async challengeUnderPolicy(input: { agentDid?: string }): Promise<PolicyChallengeGrant | { refused: string }> {
+    const r = await this.client.callTool('challenge', input.agentDid ? { agentDid: input.agentDid } : {});
+    if (r.isError) {
+      if (r.text.startsWith('mandate_required')) return { refused: 'mandate_required' };
+      throw new McpVerifierError('challenge', r.text);
+    }
+    return parse<PolicyChallengeGrant>('challenge', r.text);
+  }
+
+  /** v0.3 §21.4 — `verify` with no mandate: the policy in its place, decided on the organization's policy. */
+  async verifyUnderPolicy(input: PolicyVerifyInput): Promise<VerifyOutcome> {
+    const r = await this.client.callTool('verify', {
+      policy: input.policy,
+      ...(input.agentDid ? { agentDid: input.agentDid } : {}),
+      tool: input.tool,
+      params: input.params,
+      pop: input.pop,
+      ...(input.stepUpId ? { stepUpId: input.stepUpId } : {}),
+    });
+    if (r.isError) throw new McpVerifierError('verify', r.text);
+    return parse<VerifyOutcome>('verify', r.text);
+  }
+
+  /** v0.3 §21.4 — `report_outcome` with no mandate (§2.1, the policy in place of `mandateId`). */
+  async reportOutcomeUnderPolicy(input: PolicyReportOutcomeInput): Promise<{ recorded: unknown } | { rejected: string }> {
+    const r = await this.client.callTool('report_outcome', {
+      policy: input.policy,
+      ...(input.agentDid ? { agentDid: input.agentDid } : {}),
+      decisionEventId: input.decisionEventId,
+      outcome: input.outcome,
+      ...(input.error ? { error: input.error } : {}),
+      pop: input.pop,
+    });
+    if (r.isError) throw new McpVerifierError('report_outcome', r.text);
+    return parse<{ recorded: unknown } | { rejected: string }>('report_outcome', r.text);
+  }
 }
 
 /** One held mandate, as `get_mandate` returns it. */
 export interface HeldMandate {
   mandate: ViaMandateCredential;
-  /** The pinned, published action version — `content` holds the rules the guard pre-flights. */
-  action: { urn: string; content: { rules?: ActionRule[] } } | null;
+  /**
+   * The pinned, published action version — `content` holds the rules the guard pre-flights, and the tools it
+   * covers (`tools`, v0.3 §0.6.1) when it lists them.
+   */
+  action: { urn: string; content: { rules?: ActionRule[]; tools?: string[] } } | null;
 }
 
 /**

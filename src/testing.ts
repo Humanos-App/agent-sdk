@@ -26,6 +26,8 @@ export interface TestVerifierOptions {
   rules: TestRule[];
   /** The limits the person set, plain values (`{ credit_limit: 50 }`). */
   userParams: Record<string, unknown>;
+  /** The values the action version fixes itself, read as `constants.<name>` (v0.3 §0.6.1), plain values. */
+  constants?: Record<string, unknown>;
   /** The agent's key — PoPs are checked against it. */
   agentKey: Pick<ViaAgentKey, 'publicJwk'>;
   /** Tools the verifier puts behind a step-up (v0.3 §17.4). */
@@ -88,11 +90,15 @@ export function createTestVerifier(opts: TestVerifierOptions): {
     challenge: () => {
       const nonce = randomUUID();
       nonces.add(nonce);
-      return { nonce, aud: 'did:web:verifier.test', ttlMs: 60_000 };
+      return { nonce, aud: 'did:web:verifier.test', ttl: 60, iat: Math.floor(Date.now() / 1000) };
     },
     verify: async ({ tool, params, pop, stepUpId }) => {
       if (!(await popOk(pop, tool, params))) return record(tool, { decision: 'deny', reason: 'pop_invalid', evaluations: [], decisionEventId: eventId() });
-      const { decision, evaluations } = evaluateRules(opts.rules as ActionRule[], { userParams: opts.userParams, executionParams: params });
+      const { decision, evaluations } = evaluateRules(opts.rules as ActionRule[], {
+        userParams: opts.userParams,
+        ...(opts.constants ? { constants: opts.constants } : {}),
+        executionParams: params,
+      });
       if (decision === 'deny') return record(tool, { decision: 'deny', reason: 'rule_failed', evaluations, decisionEventId: eventId() });
       if (opts.stepUpTools?.includes(tool) && !(stepUpId && stepUps.get(stepUpId))) {
         const id = randomUUID();

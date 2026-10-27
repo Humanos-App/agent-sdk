@@ -32,8 +32,8 @@ Neither package is on a registry yet. Install both from this repository, pinned 
 ```json
 {
   "dependencies": {
-    "@humanos/agent-sdk": "github:Humanos-App/agent-sdk#v0.1.3",
-    "@humanos/via-sdk-v03": "https://raw.githubusercontent.com/Humanos-App/agent-sdk/v0.1.3/vendor/humanos-via-sdk-v03-0.3.5.tgz"
+    "@humanos/agent-sdk": "github:Humanos-App/agent-sdk#v0.2.0",
+    "@humanos/via-sdk-v03": "https://raw.githubusercontent.com/Humanos-App/agent-sdk/v0.2.0/vendor/humanos-via-sdk-v03-0.6.1.tgz"
   }
 }
 ```
@@ -71,6 +71,20 @@ try {
 }
 ```
 
+### A call with no mandate
+
+An organization's policy can let its agents call some tools with no person's mandate (v0.3 §21). A guard built
+without `mandate` verifies every call on it:
+
+```ts
+const guard = new ViaGuard({ agentKey, agentDid: did, verifier: new McpGuardVerifier(client) });
+await guard.call('kb_search', { q: 'refunds' }, kbSearch); // allowed, or ViaDeniedError: policy_denied | mandate_required
+```
+
+`mandate_required` means the policy leaves the tool to a person's mandate, or the organization has published no
+policy. `agentDid` names the agent when the credential is the organization's key; an agent key or a custodial
+agent's credential is its own.
+
 ## Govern MCP servers you did not write
 
 ```ts
@@ -90,6 +104,9 @@ await proxy.refresh('Slack');
 // An agent that stops using a service: Humanos keeps its tools, marked no longer declared.
 await declareTools(client, did, [], { emptyServices: ['Files'] });
 ```
+
+Per call, the proxy picks the mandate whose person's `allowed_tools`, or whose action's `tools`, names the tool; a
+call no mandate covers is verified on the organization's policy (`policy: false` refuses it without asking).
 
 At start, and on each `refresh`, every tool is declared to Humanos as its server describes it:
 schemas, annotations and the server it comes from, never cut by the SDK (Humanos caps long text
@@ -130,4 +147,5 @@ npm run build     # dist/: ES modules + type declarations
 development installs it from `vendor/`, and that tarball is the copy projects install by URL.
 
 To release: bump `version` in `package.json` and `SDK_VERSION` in `src/mcp/client.ts` (a test
-holds them equal), update the tag in the Install snippet above, then tag the commit `v<version>`.
+holds them equal), update the tag in the Install snippet above, add the release's entry to
+[CHANGELOG.md](CHANGELOG.md), then tag the commit `v<version>`.

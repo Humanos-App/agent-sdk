@@ -1,4 +1,4 @@
-import { actionHash, evaluateRules, jwkThumbprint, unwrapUserParamValues } from './sdk.js';
+import { actionHash, evaluateRules, jwkThumbprint, policyActionHash, unwrapUserParamValues } from './sdk.js';
 import type { RuleEvaluation, ViaMandateCredential } from './sdk.js';
 import { buildDelegatedPoP, type ViaAgentKey } from './key-provider.js';
 import { outcomeParams, type AgentOutcomeKind } from './events.js';
@@ -10,6 +10,8 @@ export class ViaDeniedError extends Error {
   constructor(
     public readonly reason: string | undefined,
     public readonly evaluations: RuleEvaluation[],
+    /** v0.3 §21.3 — with `mandate_required`: the actions a mandate must be under, any one of them. */
+    public readonly under?: { id: string }[],
   ) {
     super(`via: tool call denied (${reason ?? 'unknown'})`);
     this.name = 'ViaDeniedError';
@@ -24,14 +26,24 @@ export interface GuardCallOutcome<T = unknown> {
   result?: T;
   /** True when a deny was recorded but the tool executed anyway (`observe` mode, R5b). */
   observed?: boolean;
+  /** On a `mandate_required` deny: the actions a mandate must be under, any one of them (v0.3 §21.3). */
+  under?: { id: string }[];
 }
 
 export interface GuardOptions {
-  mandate: ViaMandateCredential;
+  /**
+   * The mandate the calls are made under. Absent, every call is decided on the organization's policy
+   * (v0.3 §21.4): the verifier must then implement `challengeUnderPolicy`, `verifyUnderPolicy` and
+   * `reportOutcomeUnderPolicy`.
+   */
+  mandate?: ViaMandateCredential;
   /** The agent's key PROVIDER — signing is delegated through it, so a KMS/enclave key works unchanged. */
   agentKey: ViaAgentKey;
   verifier: GuardVerifier;
-  compiled: CompiledLike;
+  /** The mandate's pinned action, for the advisory pre-flight; none with no mandate. */
+  compiled?: CompiledLike;
+  /** With no mandate: the agent the calls are for, when the verifier's credential is not the agent's own. */
+  agentDid?: string;
   /**
    * R5b — `observe`: the full pipeline runs (challenge, PoP, verify, signed decision
    * event) but the tool executes regardless; the record is real, the block is not.
@@ -56,12 +68,20 @@ type ToolFn = (args: Record<string, unknown>, ctx: GuardCallContext) => unknown 
  * (§16.11 + §16.6): optional local pre-flight (advisory, never authoritative) →
  * verifier challenge → PoP over `{mandateId, action, params}` (A6 binds THIS
  * transaction) → agent-direct verify → execute / refuse / step-up round-trip.
+ * With no mandate (v0.3 §21.4) the same, over `{policy, action, params}`: the
+ * organization's policy decides.
  */
 export class ViaGuard {
   private readonly mode: 'observe' | 'enforce';
 
   constructor(private readonly opts: GuardOptions) {
     this.mode = opts.mode ?? 'enforce';
+    const v = opts.verifier;
+    if (!opts.mandate && !(v.challengeUnderPolicy && v.verifyUnderPolicy && v.reportOutcomeUnderPolicy)) {
+      throw new TypeError(
+        "via: a guard with no mandate verifies on the organization's policy (v0.3 §21.4), and this verifier cannot",
+      );
+    }
   }
 
   /**
@@ -109,7 +129,7 @@ export class ViaGuard {
 
     // Local pre-flight (advisory only, R5/v0.2-new §5.3.1): saves a round-trip on obvious denials
     // in enforce mode; NEVER authoritative and never a substitute for the verifier.
-    if (this.mode === 'enforce') {
+    if (this.mode === 'enforce' && this.opts.mandate && this.opts.compiled) {
       const preflight = evaluateRules(this.opts.compiled.actionVersion.rules.filter((r) => !r.name.startsWith('assurance_floor')), {
         userParams: unwrapUserParamValues(this.opts.mandate.credentialSubject.mandate.userParams),
         executionParams: params,
@@ -147,10 +167,11 @@ export class ViaGuard {
         reason: outcome.reason,
         evaluations: outcome.evaluations,
         observed: true,
+        ...(outcome.under ? { under: outcome.under } : {}),
         result: await this.execute<T>(args, impl, decisionId, outcome),
       };
     }
-    throw new ViaDeniedError(outcome.reason, outcome.evaluations);
+    throw new ViaDeniedError(outcome.reason, outcome.evaluations, outcome.under);
   }
 
   /**
@@ -174,19 +195,26 @@ export class ViaGuard {
 
   private async report(decisionId: string | undefined, outcome: AgentOutcomeKind, error?: string): Promise<void> {
     if (!decisionId) return;
-    const { mandate, agentKey, verifier } = this.opts;
+    const { mandate, verifier, agentDid } = this.opts;
     const params = outcomeParams(decisionId, outcome, error);
+    if (!mandate) {
+      // v0.3 §21.4 — §2.1 with the policy in place of the mandate: a fresh challenge, a PoP over the policy.
+      const ch = await verifier.challengeUnderPolicy!({ ...(agentDid ? { agentDid } : {}) });
+      if ('refused' in ch) return;
+      const pop = await this.sign(ch, policyActionHash(ch.policy, 'report_outcome', params));
+      await verifier.reportOutcomeUnderPolicy!({
+        policy: ch.policy,
+        ...(agentDid ? { agentDid } : {}),
+        decisionEventId: decisionId,
+        outcome,
+        ...(error ? { error } : {}),
+        pop,
+        now: this.opts.now?.(),
+      });
+      return;
+    }
     const ch = await verifier.challenge({ mandateId: mandate.id });
-    const pop = await buildDelegatedPoP(
-      {
-        cnf: { jkt: jwkThumbprint(agentKey.publicJwk) },
-        aud: ch.aud,
-        nonce: ch.nonce,
-        iat: Math.floor((this.opts.now?.() ?? new Date()).getTime() / 1000),
-        action_hash: actionHash(mandate.id, 'report_outcome', params),
-      },
-      agentKey.sign,
-    );
+    const pop = await this.sign(ch, actionHash(mandate.id, 'report_outcome', params));
     await verifier.reportOutcome({
       mandate,
       decisionEventId: decisionId,
@@ -198,18 +226,40 @@ export class ViaGuard {
   }
 
   private async present(tool: string, params: Record<string, unknown>, stepUpSatisfied: boolean, stepUpId?: string): Promise<VerifyOutcome> {
-    const { mandate, agentKey, verifier } = this.opts;
+    const { mandate, verifier, agentDid } = this.opts;
+    if (!mandate) {
+      // v0.3 §21.4 — no mandate: the challenge names the organization's policy, the PoP binds it, and the
+      // policy decides. An organization that has published none authorizes nothing on its own.
+      const ch = await verifier.challengeUnderPolicy!({ ...(agentDid ? { agentDid } : {}) });
+      if ('refused' in ch) return { decision: 'deny', reason: ch.refused, evaluations: [] };
+      const pop = await this.sign(ch, policyActionHash(ch.policy, tool, params));
+      return verifier.verifyUnderPolicy!({
+        policy: ch.policy,
+        ...(agentDid ? { agentDid } : {}),
+        tool,
+        params,
+        pop,
+        ...(stepUpId ? { stepUpId } : {}),
+        now: this.opts.now?.(),
+      });
+    }
     const ch = await verifier.challenge({ mandateId: mandate.id });
-    const pop = await buildDelegatedPoP(
+    const pop = await this.sign(ch, actionHash(mandate.id, tool, params));
+    return verifier.verify({ mandate, tool, params, pop, stepUpSatisfied, ...(stepUpId ? { stepUpId } : {}), now: this.opts.now?.() });
+  }
+
+  /** A PoP over one call's `action_hash`, signed through the key provider. */
+  private sign(ch: { aud: string; nonce: string }, action_hash: string): Promise<string> {
+    const { agentKey } = this.opts;
+    return buildDelegatedPoP(
       {
         cnf: { jkt: jwkThumbprint(agentKey.publicJwk) },
         aud: ch.aud,
         nonce: ch.nonce,
         iat: Math.floor((this.opts.now?.() ?? new Date()).getTime() / 1000),
-        action_hash: actionHash(mandate.id, tool, params),
+        action_hash,
       },
       agentKey.sign,
     );
-    return verifier.verify({ mandate, tool, params, pop, stepUpSatisfied, ...(stepUpId ? { stepUpId } : {}), now: this.opts.now?.() });
   }
 }

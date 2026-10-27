@@ -1,4 +1,5 @@
 import type { EventType } from '@humanos/via-sdk-v03';
+import type { AgentOutcomeKind } from './sdk.js';
 
 /**
  * The two-phase outcome kinds. **They landed upstream on 2026-09-03**: both are in
@@ -23,7 +24,12 @@ import type { EventType } from '@humanos/via-sdk-v03';
  * Still 🔮 on the platform side: nothing persists an outcome event yet (v0.3 §11).
  */
 export const AGENT_OUTCOME_EVENTS = ['ACTION_COMPLETED', 'ACTION_FAILED'] as const;
-export type AgentOutcomeKind = 'completed' | 'failed';
+
+/**
+ * The exact params object BOTH sides hash for the report PoP (`action_hash` binds it, A6). The VIA
+ * SDK's own since 0.6.0, so the guard and the verifier build it with one function.
+ */
+export { outcomeParams, type AgentOutcomeKind } from './sdk.js';
 
 /**
  * Map a prototype outcome kind onto the EventType. (Since the sdk-v03 cutover
@@ -32,16 +38,3 @@ export type AgentOutcomeKind = 'completed' | 'failed';
  */
 export const asEventType = (kind: AgentOutcomeKind): EventType =>
   kind === 'completed' ? 'ACTION_COMPLETED' : 'ACTION_FAILED';
-
-/**
- * The exact params object BOTH sides hash for the report PoP (`action_hash`
- * binds it, A6) — guard builds it, gateway rebuilds it; any divergence is an
- * `action_hash_mismatch` denial.
- */
-export function outcomeParams(
-  decisionEventId: string,
-  outcome: AgentOutcomeKind,
-  error?: string,
-): Record<string, unknown> {
-  return { decisionEventId, outcome, ...(error ? { error } : {}) };
-}
