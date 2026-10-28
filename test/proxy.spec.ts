@@ -45,7 +45,7 @@ const GMAIL: UpstreamTool[] = [
   { name: 'search', inputSchema: obj({ q: { type: 'string' } }) },
 ];
 
-// ── a stand-in Humanos: holds mandates, evaluates rules with the SDK's evaluator, runs step-ups ──
+// ── a stand-in Humanos: decides on the organization's policy first, holds mandates, evaluates rules with the SDK's evaluator ──
 const wrap = (v: Record<string, unknown>) => Object.fromEntries(Object.entries(v).map(([k, value]) => [k, { description: k, value }]));
 const SLACK_MANDATE = {
   mandate: { id: 'urn:via:credential:slack', credentialSubject: { mandate: { userParams: wrap({ allowed_tools: ['slack_send_message', 'slack_search_users', 'slack_delete_message'], allowed_channels: ['C-OK'] }) } } },
@@ -55,7 +55,6 @@ const SLACK_MANDATE = {
       { name: 'allowed_tools', expression: 'executionParams.tool in userParams.allowed_tools' },
       { name: 'allowed_channels', expression: '!has(executionParams.channel_id) || executionParams.channel_id in userParams.allowed_channels' },
     ],
-    stepUp: { tools: ['slack_delete_message'] },
   } },
 };
 const GMAIL_MANDATE = {
@@ -66,18 +65,38 @@ const GMAIL_MANDATE = {
   } },
 };
 
-/** v0.3 §21.4 — the organization's policy, as the stand-in decides a call with no mandate: per tool. */
-type StandinPolicy = Record<string, 'allow' | 'deny' | { under: string }>;
+/** v0.3 §21.3 — the organization's policy, per tool: allowed, refused, or left to a person's mandate (under an action). */
+type StandinPolicy = Record<string, 'allow' | 'deny' | 'mandate' | { under: string }>;
 const POLICY_URN = 'urn:via:policy:p1';
+/** The tools the mandates above are for are left to them; every other tool gets the default. */
+const DELEGATED: StandinPolicy = { slack_send_message: 'mandate', slack_search_users: 'mandate', slack_delete_message: 'mandate', send_message: 'mandate' };
+type StandinMandate = { mandate: { id: string; credentialSubject: { mandate: { userParams: unknown } } }; action: { urn: string; content: unknown } | null };
 
-function humanos(held = [SLACK_MANDATE, GMAIL_MANDATE], policy?: StandinPolicy) {
+function humanos(held: StandinMandate[] = [SLACK_MANDATE, GMAIL_MANDATE], policy: StandinPolicy = DELEGATED, byDefault: 'allow' | 'deny' = 'deny') {
   const declared: Record<string, unknown>[] = [];
   const refuse = new Set<string>(); // services whose declarations the platform refuses
   const verified: Record<string, unknown>[] = [];
   const reported: Record<string, unknown>[] = [];
-  const stepUps = new Map<string, { terms: string; status: 'pending' | 'approved' | 'declined' | 'consumed' }>();
+  const reads = { get_policy: 0, get_mandate: 0 };
   let n = 0;
   const answer = (v: unknown) => ({ text: JSON.stringify(v), isError: false });
+  const decide = (args: Record<string, unknown>) => {
+    const set = policy[String(args.tool)];
+    const effect = set ?? byDefault;
+    const lane = { evaluations: [], enforcement: 'policy', ...(set ? {} : { unset: true }) };
+    if (effect === 'allow') return { decision: 'allow', ...lane, ...(set ? {} : { enforcement: 'none' }), decisionEventId: `urn:via:event:p-${verified.length}` };
+    if (effect === 'deny') return { decision: 'deny', reason: 'policy_denied', ...lane };
+    const under = typeof effect === 'object' ? { under: [{ id: effect.under }] } : {};
+    const h = held.find((x) => x.mandate.id === args.mandateId);
+    if (!h || (typeof effect === 'object' && h.action?.urn !== effect.under)) return { decision: 'deny', reason: 'mandate_required', ...lane, ...under };
+    const rules = ((h.action?.content ?? {}) as { rules?: never }).rules ?? [];
+    const r = evaluateRules(rules, { userParams: unwrapUserParamValues(h.mandate.credentialSubject.mandate.userParams as never), executionParams: args.params } as never);
+    return { ...r, ...(r.decision === 'deny' ? { reason: 'rule_failed' } : {}), enforcement: 'rules', decisionEventId: `urn:via:event:d-${verified.length}` };
+  };
+  const access = (tool: string) => {
+    const e = policy[tool];
+    return e === undefined ? 'not_set' : e === 'allow' || e === 'deny' ? e : 'mandate';
+  };
   const client: ViaMcpClient = {
     initialize: async () => ({ serverInfo: { name: 'humanos', version: '0' }, protocolVersion: '2025-06-18' }),
     listTools: async () => [],
@@ -87,73 +106,47 @@ function humanos(held = [SLACK_MANDATE, GMAIL_MANDATE], policy?: StandinPolicy) 
         declared.push(args);
         return answer({ recorded: (args.tools as unknown[]).length });
       }
-      if (name === 'get_mandate') return answer(held);
-      if (name === 'challenge') {
-        // With no mandate, the connector names the organization's policy — or, with none, every call needs a mandate.
-        if (!args.mandateId && !policy) return { text: 'mandate_required: this organization has published no policy', isError: true };
-        return answer({ nonce: `n-${++n}`, aud: 'did:web:org', ttl: 60, iat: 1_757_160_000, ...(args.mandateId ? {} : { policy: POLICY_URN }) });
+      if (name === 'get_mandate') {
+        reads.get_mandate++;
+        return answer(held);
       }
+      if (name === 'get_policy') {
+        reads.get_policy++;
+        const names = [...new Set(declared.flatMap((d) => (d.tools as { name: string }[]).map((t) => t.name)))];
+        return answer({ agent: args.agentDid, policy: { id: POLICY_URN, version: 1, default: byDefault }, tools: names.map((tool) => ({ tool, access: access(tool), meaning: '' })) });
+      }
+      // Every organization has a policy (v0 at the least): every challenge names it.
+      if (name === 'challenge') return answer({ nonce: `n-${++n}`, aud: 'did:web:org', ttl: 60, iat: 1_757_160_000, policy: POLICY_URN });
       if (name === 'report_outcome') { reported.push(args); return answer({ recorded: { id: `urn:via:event:o-${reported.length}` } }); }
-      if (name === 'verify' && !args.mandateId) {
-        verified.push(args);
-        const effect = policy?.[String(args.tool)];
-        return answer(
-          effect === 'allow'
-            ? { decision: 'allow', evaluations: [], enforcement: 'policy', decisionEventId: `urn:via:event:p-${verified.length}` }
-            : {
-                decision: 'deny',
-                reason: effect === 'deny' ? 'policy_denied' : 'mandate_required',
-                evaluations: [],
-                enforcement: 'policy',
-                ...(typeof effect === 'object' ? { under: [{ id: effect.under }] } : {}),
-              },
-        );
-      }
       if (name === 'verify') {
         verified.push(args);
-        const h = held.find((x) => x.mandate.id === args.mandateId)!;
-        const params = args.params as Record<string, unknown>;
-        const terms = JSON.stringify([args.mandateId, args.tool, params]);
-        if ((h.action.content as { stepUp?: { tools: string[] } }).stepUp?.tools.includes(String(args.tool))) {
-          const su = args.stepUpId ? stepUps.get(String(args.stepUpId)) : undefined;
-          if (su?.status === 'declined') return answer({ decision: 'deny', reason: 'stepup_declined', evaluations: [] });
-          if (!su || su.status !== 'approved' || su.terms !== terms) {
-            const open = [...stepUps.entries()].find(([, v]) => v.terms === terms && v.status === 'pending');
-            const id = open?.[0] ?? `su-${stepUps.size + 1}`;
-            if (!open) stepUps.set(id, { terms, status: 'pending' });
-            return answer({ decision: 'rechallenge', evaluations: [], stepUp: { id, approveLink: `https://app.test/approve/${id}`, method: 'otp' } });
-          }
-          su.status = 'consumed';
-        }
-        const r = evaluateRules(h.action.content.rules as never, { userParams: unwrapUserParamValues(h.mandate.credentialSubject.mandate.userParams as never), executionParams: params } as never);
-        return answer({ ...r, ...(r.decision === 'deny' ? { reason: 'rule_failed' } : {}), decisionEventId: `urn:via:event:d-${verified.length}` });
+        return answer(decide(args));
       }
       return { text: `unknown tool ${name}`, isError: true };
     },
   };
-  return { client, declared, refuse, verified, reported, stepUps };
+  return { client, declared, refuse, verified, reported, reads, held };
 }
 
 async function setup(
   opts: {
     fail?: string[];
     decorateCall?: ViaMcpProxyConfig['decorateCall'];
-    /** The organization's policy; absent, it has published none. */
+    /** The organization's policy, over `DELEGATED`. */
     policy?: StandinPolicy;
-    /** The proxy's own `policy` switch. */
-    askPolicy?: boolean;
+    default?: 'allow' | 'deny';
+    held?: StandinMandate[];
   } = {},
 ) {
   const slack = standin('Slack', SLACK, opts.fail);
   const gmail = standin('Gmail', GMAIL);
-  const h = humanos(undefined, opts.policy);
+  const h = humanos(opts.held, { ...DELEGATED, ...opts.policy }, opts.default);
   const proxy = await startViaMcpProxy({
     upstreams: [await inProcessUpstream('Slack', slack.handleRpc), await inProcessUpstream('Gmail', gmail.handleRpc)],
     humanos: h.client,
     agentKey: await softwareKey(),
     did: 'did:web:humanos.tech:agent:proxy',
     ...(opts.decorateCall ? { decorateCall: opts.decorateCall } : {}),
-    ...(opts.askPolicy !== undefined ? { policy: opts.askPolicy } : {}),
   });
   let id = 0;
   const call = async (name: string, args: Record<string, unknown>) => {
@@ -188,7 +181,7 @@ describe('the governing proxy — ViaGuard in front of MCP servers', () => {
   });
 
   it('deny: nothing reaches the server — another channel, or a tool the person did not allow', async () => {
-    const { call, slack } = await setup();
+    const { call, slack } = await setup({ policy: { slack_create_canvas: 'mandate' } });
     const other = await call('slack_send_message', { channel_id: 'C-GENERAL', message: 'hi' });
     expect(other.isError).toBe(true);
     expect(other.text).toMatch(/Blocked by VIA: .*Nothing was sent to Slack/);
@@ -212,31 +205,28 @@ describe('the governing proxy — ViaGuard in front of MCP servers', () => {
     expect(gmail.journal).toHaveLength(1);
   });
 
-  it('step-up: the link comes back at once, nothing is sent; after approval the same call goes through, presenting the approval by id', async () => {
-    const { call, slack, h } = await setup();
-    const args = { channel_id: 'C-OK', message_ts: '17.1' };
-    const first = await call('slack_delete_message', args);
-    expect(first.isError).toBe(true);
-    expect(first.text).toMatch(/needs the person's approval before it reaches Slack: https:\/\/app\.test\/approve\/su-1/);
-    expect(slack.journal).toEqual([]);
-    h.stepUps.get('su-1')!.status = 'approved'; // the person approves on the page
-    const retry = await call('slack_delete_message', args);
-    expect(retry).toEqual({ text: 'Slack.slack_delete_message ok', isError: false });
-    expect(h.verified.at(-1)).toMatchObject({ stepUpId: 'su-1' });
-    expect(slack.journal).toEqual([{ tool: 'slack_delete_message', args }]);
-    // spent: the same call again opens a new step-up
-    expect((await call('slack_delete_message', args)).text).toMatch(/approve\/su-2/);
+  it('presents a mandate only for a tool the policy leaves to one: an allowed tool binds the policy, though a mandate covers it', async () => {
+    const { call, h } = await setup({ policy: { slack_search_users: 'allow' } });
+    expect((await call('slack_search_users', { query: 'ana' })).isError).toBe(false);
+    expect(h.verified[0]).toMatchObject({ policy: POLICY_URN, agentDid: 'did:web:humanos.tech:agent:proxy' });
+    expect(h.verified[0]).not.toHaveProperty('mandateId');
   });
 
-  it('step-up declined: the retry is refused and nothing is sent', async () => {
-    const { call, slack, h } = await setup();
-    const args = { channel_id: 'C-OK', message_ts: '17.2' };
-    await call('slack_delete_message', args);
-    h.stepUps.get('su-1')!.status = 'declined';
-    const retry = await call('slack_delete_message', args);
-    expect(retry.isError).toBe(true);
-    expect(retry.text).toMatch(/Blocked by VIA/);
-    expect(slack.journal).toEqual([]);
+  it('reads the policy and the mandates once at start, and again on a mandate_required: a mandate a person has just granted is presented', async () => {
+    const { call, slack, h } = await setup({ held: [GMAIL_MANDATE] });
+    expect(h.reads).toEqual({ get_policy: 1, get_mandate: 1 });
+    h.held.push(SLACK_MANDATE); // the person grants it after the proxy started
+    expect(await call('slack_send_message', { channel_id: 'C-OK', message: 'hi' })).toEqual({ text: 'Slack.slack_send_message ok', isError: false });
+    expect(h.verified.map((v) => v.mandateId ?? v.policy)).toEqual([POLICY_URN, 'urn:via:credential:slack']);
+    expect(h.reads).toEqual({ get_policy: 2, get_mandate: 2 });
+    expect(slack.journal).toHaveLength(1);
+  });
+
+  it('a mandate the policy refuses as not under its action is not presented again; one under it is', async () => {
+    const GMAIL_2 = { ...GMAIL_MANDATE, mandate: { ...GMAIL_MANDATE.mandate, id: 'urn:via:credential:gmail-2' }, action: { ...GMAIL_MANDATE.action, urn: 'urn:via:action:gmail-2' } };
+    const { call, h } = await setup({ held: [GMAIL_MANDATE, GMAIL_2], policy: { send_message: { under: 'urn:via:action:gmail-2' } } });
+    expect((await call('send_message', { to: ['ana@h.test'], subject: 's', body: 'b' })).isError).toBe(false);
+    expect(h.verified.map((v) => v.mandateId)).toEqual(['urn:via:credential:gmail', 'urn:via:credential:gmail-2']);
   });
 
   it('decorateCall: what it returns rides the call as _meta — it is given the decision, and runs only for a call that will be sent', async () => {
@@ -286,38 +276,36 @@ async function live() {
 }
 const pin: UpstreamTool = { name: 'slack_pin', inputSchema: obj({ message_ts: { type: 'string' } }) };
 
-describe('a call no mandate covers: the organization policy decides (v0.3 §21.4)', () => {
-  it("verifies it on the policy: allowed, it reaches the server, and its outcome is reported against the policy", async () => {
+describe('a call the policy decides alone (v0.3 §21.3)', () => {
+  it('allowed, it reaches the server, and its outcome is reported against the policy', async () => {
     const { call, slack, h } = await setup({ policy: { slack_create_canvas: 'allow' } });
     expect(await call('slack_create_canvas', { title: 'Q4' })).toEqual({ text: 'Slack.slack_create_canvas ok', isError: false });
     expect(slack.journal).toEqual([{ tool: 'slack_create_canvas', args: { title: 'Q4' } }]);
     expect(h.verified[0]).toMatchObject({ policy: POLICY_URN, agentDid: 'did:web:humanos.tech:agent:proxy', tool: 'slack_create_canvas' });
     expect(h.verified[0]).not.toHaveProperty('mandateId');
-    expect(h.reported[0]).toMatchObject({ policy: POLICY_URN, outcome: 'completed', decisionEventId: 'urn:via:event:p-1' });
+    expect(h.reported[0]).toMatchObject({ policy: POLICY_URN, agentDid: 'did:web:humanos.tech:agent:proxy', outcome: 'completed', decisionEventId: 'urn:via:event:p-1' });
+  });
+
+  it('a tool the policy sets nothing for gets its default: allowed, it runs', async () => {
+    const { call, slack } = await setup({ default: 'allow' });
+    expect((await call('slack_create_canvas', { title: 'Q4' })).isError).toBe(false);
+    expect(slack.journal).toHaveLength(1);
   });
 
   it.each([
     ['the policy refuses it', { slack_create_canvas: 'deny' } as StandinPolicy, /Blocked by VIA: the organization’s policy does not allow it/],
-    ['the policy leaves it to a person', {} as StandinPolicy, /No mandate covers slack_create_canvas \(Slack\)/],
-    ['the organization has published no policy', undefined, /No mandate covers slack_create_canvas \(Slack\)/],
+    ['its default refuses it', {} as StandinPolicy, /Blocked by VIA: the organization’s policy does not allow it/],
+    ['the policy leaves it to a person, and no mandate covers it', { slack_create_canvas: 'mandate' } as StandinPolicy, /No mandate covers slack_create_canvas \(Slack\)/],
     [
       'the policy needs a mandate under a named action',
       { slack_create_canvas: { under: 'urn:via:action:canvas' } } as StandinPolicy,
       /needs a person's mandate under urn:via:action:canvas for it: ask the person for one/,
     ],
   ])('sends nothing when %s', async (_case, policy, said) => {
-    const { call, slack } = await setup({ ...(policy ? { policy } : {}) });
+    const { call, slack } = await setup({ policy });
     const out = await call('slack_create_canvas', { title: 'Q4' });
     expect(out.isError).toBe(true);
     expect(out.text).toMatch(said);
-    expect(slack.journal).toEqual([]);
-  });
-
-  // @invariant: told not to ask, the proxy refuses a call no mandate covers without reaching Humanos.
-  it('refuses it without asking Humanos when the proxy is told not to ask the policy', async () => {
-    const { call, slack, h } = await setup({ policy: { slack_create_canvas: 'allow' }, askPolicy: false });
-    expect((await call('slack_create_canvas', { title: 'Q4' })).text).toMatch(/No mandate covers/);
-    expect(h.verified).toEqual([]);
     expect(slack.journal).toEqual([]);
   });
 });
@@ -383,6 +371,9 @@ describe('mandate selection and parameter declaration', () => {
     expect((pickMandate(t, [authz, service]) as { mandate: { id: string } }).mandate.id).toBe('service');
     expect((pickMandate(t, [authz, refused]) as { mandate: { id: string } }).mandate.id).toBe('authz');
     expect(pickMandate(tool('noparams', {}), [service])).toBeUndefined();
+    // At the same rank, one on the control the policy names first.
+    const other = held('other', {}, { tool: {}, channel: {} });
+    expect((pickMandate(t, [service, other], ['other']) as { mandate: { id: string } }).mandate.id).toBe('other');
   });
 
   it("an action that lists its tools covers those exactly, and never another", () => {

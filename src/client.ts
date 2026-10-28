@@ -111,14 +111,6 @@ export class MiniPlatformClient {
     return this.post('/api/revoke', { mandateId, reason });
   }
 
-  /** §17.4 — surface a manager approval on the dashboard and poll until it's decided. */
-  requestStepUp(mandateId: string, tool: string, amount: number | null): Promise<{ id: string }> {
-    return this.post('/api/stepup/request', { mandateId, tool, amount });
-  }
-  stepUpStatus(id: string): Promise<{ decided: boolean | null }> {
-    return this.get(`/api/stepup/${encodeURIComponent(id)}`);
-  }
-
   // ── v0.3 actor lifecycle (agent-side self-service) ─────────────────────────
 
   /** The actor's current snapshot + chain (what the dashboard also reads). */
@@ -197,7 +189,10 @@ export class MiniPlatformClient {
     return this.get(`/api/audit/${encodeURIComponent(mandateId)}`);
   }
 
-  /** The HTTP `GuardVerifier` — plug into `ViaGuard` unchanged; only PoPs travel. */
+  /**
+   * The HTTP `GuardVerifier` — plug into `ViaGuard` with the same `mandate`; only PoPs travel. The mini-platform has
+   * no policy: its challenge names none, so every call presents the mandate.
+   */
   verifierFor(mandateId: string): GuardVerifier {
     return {
       challenge: () => this.post<ChallengeGrant>('/api/challenge', { mandateId }),
@@ -207,7 +202,6 @@ export class MiniPlatformClient {
           tool: input.tool,
           params: input.params,
           pop: input.pop,
-          stepUpSatisfied: input.stepUpSatisfied,
         }),
       reportOutcome: (input) =>
         this.post<{ recorded: ViaEvent } | { rejected: string }>('/api/outcome', {

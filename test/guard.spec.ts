@@ -1,29 +1,30 @@
 import { describe, expect, it } from 'vitest';
-import { ViaDeniedError, ViaGuard } from '../src/guard.js';
+import { ViaDeniedError, ViaGuard, type CallMandate, type MandateSource } from '../src/guard.js';
 import { softwareKey } from '../src/key-provider.js';
 import { actionHash, decodePoP, jwkThumbprint, policyActionHash, verifyPoPSignature } from '../src/sdk.js';
 import type { ViaMandateCredential } from '../src/sdk.js';
-import type {
-  GuardVerifier,
-  PolicyReportOutcomeInput,
-  PolicyVerifyInput,
-  ReportOutcomeInput,
-  VerifyInput,
-  VerifyOutcome,
-} from '../src/types.js';
+import type { GuardVerifier, ReportOutcomeInput, VerifyInput, VerifyOutcome } from '../src/types.js';
 
-// The guard's verifier seam, played by a recorder: it hands out single-use nonces, answers what
-// the test scripts, and keeps every PoP it was shown so the test can check what the guard signed.
-function recorder(script: (input: VerifyInput, n: number) => VerifyOutcome) {
+const AGENT = 'did:web:humanos.tech:agent:a';
+const POLICY = 'urn:via:policy:p1';
+
+// The guard's verifier seam, played by a recorder: it hands out single-use nonces naming the policy (or none, as a
+// verifier with no policy), answers what the test scripts, and keeps every PoP it was shown so the test can check
+// what the guard signed.
+function recorder(script: (input: VerifyInput, n: number) => VerifyOutcome, opts: { policy?: string | null; refused?: string } = {}) {
   const nonces = new Set<string>();
+  const policy = opts.policy === undefined ? POLICY : opts.policy;
   let issued = 0;
+  const challenged: { agentDid: string; mandateId?: string }[] = [];
   const verified: VerifyInput[] = [];
   const reported: ReportOutcomeInput[] = [];
   const verifier: GuardVerifier = {
-    challenge: () => {
+    challenge: (input) => {
+      challenged.push(input);
+      if (opts.refused) return { refused: opts.refused };
       const nonce = `n-${++issued}`;
       nonces.add(nonce);
-      return { nonce, aud: 'did:web:humanos.tech:org:test', ttl: 60, iat: 1_757_160_000 };
+      return { nonce, aud: 'did:web:humanos.tech:org:test', ttl: 60, iat: 1_757_160_000, ...(policy ? { policy } : {}) };
     },
     verify: (input) => {
       verified.push(input);
@@ -34,10 +35,10 @@ function recorder(script: (input: VerifyInput, n: number) => VerifyOutcome) {
     },
     reportOutcome: (input) => {
       reported.push(input);
-      return { recorded: { id: 'urn:via:event:outcome' } as never };
+      return { recorded: { id: 'urn:via:event:outcome' } };
     },
   };
-  return { verifier, verified, reported, issued: () => issued };
+  return { verifier, challenged, verified, reported };
 }
 
 /** Decode a PoP that MUST be well-formed — the test is about what it carries, not whether it parses. */
@@ -47,27 +48,31 @@ function payloadOf(pop: string) {
   return { payload: d.payload, jkt: d.jkt };
 }
 
-const MANDATE = { id: 'urn:via:credential:m-1', credentialSubject: { mandate: { userParams: {} } } } as unknown as ViaMandateCredential;
+const mandateOf = (id: string) => ({ id, credentialSubject: { mandate: { userParams: {} } } }) as unknown as ViaMandateCredential;
+const MANDATE = mandateOf('urn:via:credential:m-1');
 const COMPILED = { actionVersion: { rules: [] } };
 const allow = (): VerifyOutcome => ({ decision: 'allow', evaluations: [], event: { id: 'urn:via:event:decision' } as never });
 
 async function guard(script: (input: VerifyInput, n: number) => VerifyOutcome, extra: Partial<ConstructorParameters<typeof ViaGuard>[0]> = {}) {
   const agentKey = await softwareKey();
   const r = recorder(script);
-  const g = new ViaGuard({ mandate: MANDATE, agentKey, verifier: r.verifier, compiled: COMPILED, ...extra });
+  const g = new ViaGuard({ mandate: MANDATE, agentKey, agentDid: AGENT, verifier: r.verifier, compiled: COMPILED, ...extra });
   return { g, agentKey, ...r };
 }
 
 describe('ViaGuard — the per-call pipeline (v0.3 §16.11, §16.6)', () => {
-  it('allow: challenge → PoP over {mandateId, tool, params} → verify → run → report completed', async () => {
-    const { g, agentKey, verified, reported } = await guard(allow);
+  it('allow: challenge → PoP over {mandateId, tool, params} → verify → run → report completed, the agent named on each', async () => {
+    const { g, agentKey, challenged, verified, reported } = await guard(allow);
     let ran = 0;
     const out = await g.call('book_load', { load_id: 'L-1' }, (args) => { ran++; return { booked: args.load_id }; });
-    expect(out).toMatchObject({ decision: 'allow', result: { booked: 'L-1' } });
+    expect(out).toMatchObject({ decision: 'allow', result: { booked: 'L-1' }, mandateId: MANDATE.id });
     expect(ran).toBe(1);
+    expect(challenged[0]).toEqual({ agentDid: AGENT, mandateId: MANDATE.id });
 
     // The PoP the verifier saw: signed by the agent's key, bound to THIS call, addressed to the verifier.
     const v = verified[0]!;
+    expect(v).toMatchObject({ agentDid: AGENT, mandateId: MANDATE.id });
+    expect(v).not.toHaveProperty('policy');
     expect(v.params).toEqual({ load_id: 'L-1', tool: 'book_load' }); // the discriminator is added
     const pop = payloadOf(v.pop);
     expect(pop.payload.action_hash).toBe(actionHash(MANDATE.id, 'book_load', v.params));
@@ -77,7 +82,7 @@ describe('ViaGuard — the per-call pipeline (v0.3 §16.11, §16.6)', () => {
 
     // Second phase: the outcome, against the DECISION event, with its own fresh PoP.
     expect(reported).toHaveLength(1);
-    expect(reported[0]).toMatchObject({ decisionEventId: 'urn:via:event:decision', outcome: 'completed' });
+    expect(reported[0]).toMatchObject({ agentDid: AGENT, mandateId: MANDATE.id, decisionEventId: 'urn:via:event:decision', outcome: 'completed' });
     const rp = payloadOf(reported[0]!.pop);
     expect(rp.payload.action_hash).toBe(actionHash(MANDATE.id, 'report_outcome', { decisionEventId: 'urn:via:event:decision', outcome: 'completed' }));
     expect(rp.payload.nonce).not.toBe(pop.payload.nonce); // never the same nonce twice
@@ -97,23 +102,6 @@ describe('ViaGuard — the per-call pipeline (v0.3 §16.11, §16.6)', () => {
     const out = await g.call('book_load', { load_id: 'L-1' }, () => 'ran');
     expect(out).toMatchObject({ decision: 'deny', reason: 'rule_failed', observed: true, result: 'ran' });
     expect(reported[0]).toMatchObject({ decisionEventId: 'urn:via:event:denied', outcome: 'completed' });
-  });
-
-  it('rechallenge (§17.4): the builder\'s approval channel decides; satisfied → a FRESH challenge and PoP, declined → stepup_declined', async () => {
-    const script = (input: VerifyInput): VerifyOutcome => (input.stepUpSatisfied ? allow() : { decision: 'rechallenge', evaluations: [] });
-    const asked: string[] = [];
-    const yes = await guard(script, { onRechallenge: ({ tool }) => { asked.push(tool); return true; } });
-    const out = await yes.g.call('book_load', { load_id: 'L-1' }, () => 'ran');
-    expect(out.decision).toBe('allow');
-    expect(asked).toEqual(['book_load']);
-    expect(yes.verified).toHaveLength(2);
-    expect(yes.verified[1]!.stepUpSatisfied).toBe(true);
-    expect(payloadOf(yes.verified[0]!.pop).payload.nonce).not.toBe(payloadOf(yes.verified[1]!.pop).payload.nonce); // the spent nonce is not reused
-
-    const no = await guard(script, { onRechallenge: () => false });
-    await expect(no.g.call('book_load', { load_id: 'L-1' }, () => 'ran')).rejects.toThrow(/stepup_declined/);
-    const none = await guard(script); // no channel configured at all → a deny, never a silent allow
-    await expect(none.g.call('book_load', { load_id: 'L-1' }, () => 'ran')).rejects.toThrow(/stepup_declined/);
   });
 
   it('a tool that throws is reported as failed and RETHROWN — the guard evidences failures, it does not swallow them', async () => {
@@ -136,7 +124,7 @@ describe('ViaGuard — the per-call pipeline (v0.3 §16.11, §16.6)', () => {
     expect((await g.call('search_loads', {}, () => 'ok')).decision).toBe('allow');
     // Re-present the very PoP the guard just used: same bytes, same nonce, already spent.
     const seen = verified[0]!;
-    const replay = await verifier.verify({ mandate: MANDATE, tool: seen.tool, params: seen.params, pop: seen.pop });
+    const replay = await verifier.verify({ agentDid: AGENT, mandateId: MANDATE.id, tool: seen.tool, params: seen.params, pop: seen.pop });
     expect(replay).toMatchObject({ decision: 'deny', reason: 'pop_replayed' });
   });
 
@@ -156,87 +144,124 @@ describe('ViaGuard — the per-call pipeline (v0.3 §16.11, §16.6)', () => {
     denied.g.interceptTools(t2);
     await expect(t2.book_load()).rejects.toThrow(ViaDeniedError);
   });
-});
 
-describe('ViaGuard — step-up by id (v0.3 §17.4)', () => {
-  it('hands onRechallenge the step-up the verifier opened, and re-presents with its id once approved', async () => {
-    let seen: unknown;
-    const { g, verified } = await guard(
-      (_input, n) => (n === 1 ? { decision: 'rechallenge', evaluations: [], stepUp: { id: 'su-1', approveLink: 'https://app.test/approve/t' } } : allow()),
-      { onRechallenge: (info) => { seen = info.stepUp; return true; } },
-    );
-    const out = await g.call('wire', { amount: 5 }, () => 'sent');
-    expect(out.decision).toBe('allow');
-    expect(seen).toEqual({ id: 'su-1', approveLink: 'https://app.test/approve/t' });
-    expect(verified[1]!.stepUpId).toBe('su-1');
+  it('a verifier that refuses to challenge the agent is a deny: nothing verified, nothing run', async () => {
+    const agentKey = await softwareKey();
+    const r = recorder(allow, { refused: 'actor_unresolvable' });
+    const g = new ViaGuard({ agentKey, agentDid: AGENT, verifier: r.verifier });
+    let ran = 0;
+    await expect(g.call('kb_search', {}, () => ran++)).rejects.toMatchObject({ reason: 'actor_unresolvable' });
+    expect(ran).toBe(0);
+    expect(r.verified).toEqual([]);
   });
 
-  it("a call can present an approval it already holds — a retry after the person approved", async () => {
-    const { g, verified } = await guard(allow);
-    await g.call('wire', { amount: 5 }, () => 'sent', { stepUpId: 'su-9' });
-    expect(verified[0]!.stepUpId).toBe('su-9');
+  it('refuses to be built with both a fixed mandate and a mandate source', async () => {
+    const { verifier } = recorder(allow);
+    expect(() => new ViaGuard({ agentKey: {} as never, agentDid: AGENT, verifier, mandate: MANDATE, mandates: { mandateFor: () => undefined } })).toThrow(/not both/);
   });
 });
 
 describe('ViaGuard — a call with no mandate, on the organization policy (v0.3 §21.4)', () => {
-  const POLICY = 'urn:via:policy:p1';
-  /** A verifier that verifies on a policy: it names it in each challenge, and records what it was shown. */
-  function policyVerifier(answer: VerifyOutcome | { refused: string }) {
-    const verified: PolicyVerifyInput[] = [];
-    const reported: PolicyReportOutcomeInput[] = [];
-    const verifier: GuardVerifier = {
-      challenge: () => {
-        throw new Error('no mandate: the mandate challenge is never asked');
-      },
-      verify: () => {
-        throw new Error('no mandate: the mandate verify is never asked');
-      },
-      reportOutcome: () => ({ rejected: 'no mandate' }),
-      challengeUnderPolicy: (input) =>
-        'refused' in answer ? answer : { nonce: `n-${verified.length + reported.length}`, aud: 'did:web:org', ttl: 60, iat: 1_757_160_000, policy: POLICY, ...input },
-      verifyUnderPolicy: (input) => {
-        verified.push(input);
-        return answer as VerifyOutcome;
-      },
-      reportOutcomeUnderPolicy: (input) => {
-        reported.push(input);
-        return { recorded: 'urn:via:event:o' };
-      },
-    };
-    return { verifier, verified, reported };
-  }
-
-  it("proves the call over {policy, tool, params}, runs it on an allow, and reports its outcome on the policy", async () => {
+  it('proves the call over {policy, tool, params}, runs it on an allow, and reports its outcome on the policy', async () => {
     const agentKey = await softwareKey();
-    const { verifier, verified, reported } = policyVerifier({ decision: 'allow', evaluations: [], decisionEventId: 'urn:via:event:d' });
-    const g = new ViaGuard({ agentKey, verifier, agentDid: 'did:web:humanos.tech:agent:a' });
+    const { verifier, challenged, verified, reported } = recorder(() => ({ decision: 'allow', evaluations: [], decisionEventId: 'urn:via:event:d', enforcement: 'none', unset: true }));
+    const g = new ViaGuard({ agentKey, agentDid: AGENT, verifier });
 
     const out = await g.call('kb_search', { q: 'refunds' }, () => 'found');
 
     expect(out).toMatchObject({ decision: 'allow', result: 'found' });
-    expect(verified[0]).toMatchObject({ policy: POLICY, agentDid: 'did:web:humanos.tech:agent:a', tool: 'kb_search' });
+    expect(out).not.toHaveProperty('mandateId');
+    expect(challenged[0]).toEqual({ agentDid: AGENT });
+    expect(verified[0]).toMatchObject({ policy: POLICY, agentDid: AGENT, tool: 'kb_search' });
+    expect(verified[0]).not.toHaveProperty('mandateId');
     expect(payloadOf(verified[0]!.pop).payload.action_hash).toBe(policyActionHash(POLICY, 'kb_search', { q: 'refunds', tool: 'kb_search' }));
-    expect(reported[0]).toMatchObject({ policy: POLICY, decisionEventId: 'urn:via:event:d', outcome: 'completed' });
+    expect(reported[0]).toMatchObject({ policy: POLICY, agentDid: AGENT, decisionEventId: 'urn:via:event:d', outcome: 'completed' });
   });
 
-  it('denies mandate_required, running nothing, where the organization has published no policy', async () => {
-    const { verifier, verified } = policyVerifier({ refused: 'mandate_required' });
-    const g = new ViaGuard({ agentKey: await softwareKey(), verifier });
+  it('denies mandate_required, running nothing and verifying nothing, where the verifier names no policy', async () => {
+    const r = recorder(allow, { policy: null });
+    const g = new ViaGuard({ agentKey: await softwareKey(), agentDid: AGENT, verifier: r.verifier });
     let ran = 0;
     await expect(g.call('kb_search', {}, () => ran++)).rejects.toMatchObject({ reason: 'mandate_required' });
     expect(ran).toBe(0);
-    expect(verified).toEqual([]);
+    expect(r.verified).toEqual([]);
   });
 
   it('names the actions a mandate must be under when the policy says which', async () => {
     const under = [{ id: 'urn:via:action:credit' }];
-    const { verifier } = policyVerifier({ decision: 'deny', reason: 'mandate_required', evaluations: [], under });
-    const g = new ViaGuard({ agentKey: await softwareKey(), verifier });
+    const { verifier } = recorder(() => ({ decision: 'deny', reason: 'mandate_required', evaluations: [], under }));
+    const g = new ViaGuard({ agentKey: await softwareKey(), agentDid: AGENT, verifier });
     await expect(g.call('issue_credit', {}, () => 'ran')).rejects.toMatchObject({ reason: 'mandate_required', under });
   });
+});
 
-  it('refuses to be built with no mandate on a verifier that cannot verify on a policy', async () => {
-    const { verifier } = recorder(allow);
-    expect(() => new ViaGuard({ agentKey: {} as never, verifier })).toThrow(/organization's policy/);
+describe('ViaGuard — the mandate chosen per call (v0.3 §21.3)', () => {
+  /** A source that answers from a list of choices, one per ask, and records each ask. */
+  function source(choices: (CallMandate | undefined)[]) {
+    const asked: { tool: string; retry?: { refused?: string; under?: { id: string }[] } }[] = [];
+    const mandates: MandateSource = {
+      mandateFor: (call, retry) => {
+        asked.push({ tool: call.tool, ...(retry ? { retry } : {}) });
+        return choices.shift();
+      },
+    };
+    return { mandates, asked };
+  }
+
+  it('presents the mandate the source chooses, hands its id to the tool, and reports under it', async () => {
+    const { mandates } = source([{ mandate: MANDATE }]);
+    const { g, verified, reported } = await guard(allow, { mandate: undefined, mandates });
+    let seen: string | undefined;
+    await g.call('issue_credit', { amount: 5 }, (_a, ctx) => { seen = ctx.mandateId; return 'ok'; });
+    expect(seen).toBe(MANDATE.id);
+    expect(verified[0]).toMatchObject({ mandateId: MANDATE.id });
+    expect(reported[0]).toMatchObject({ mandateId: MANDATE.id });
+  });
+
+  it('presents none when the source chooses none: the policy decides alone', async () => {
+    const { mandates } = source([undefined]);
+    const { g, verified } = await guard(allow, { mandate: undefined, mandates });
+    await g.call('kb_search', {}, () => 'ok');
+    expect(verified[0]).toMatchObject({ policy: POLICY });
+    expect(verified[0]).not.toHaveProperty('mandateId');
+  });
+
+  it('on mandate_required, asks the source again once, with the mandate refused and the actions named, and presents its new choice', async () => {
+    const other = mandateOf('urn:via:credential:m-2');
+    const under = [{ id: 'urn:via:action:credit' }];
+    const { mandates, asked } = source([{ mandate: MANDATE }, { mandate: other }]);
+    const { g, verified } = await guard(
+      (input) => (input.mandateId === other.id ? allow() : { decision: 'deny', reason: 'mandate_required', evaluations: [], under }),
+      { mandate: undefined, mandates },
+    );
+    const out = await g.call('issue_credit', {}, () => 'ok');
+    expect(out).toMatchObject({ decision: 'allow', mandateId: other.id });
+    expect(asked).toEqual([{ tool: 'issue_credit' }, { tool: 'issue_credit', retry: { refused: MANDATE.id, under } }]);
+    expect(verified.map((v) => v.mandateId)).toEqual([MANDATE.id, other.id]);
+  });
+
+  it('a call that presented none is presented once more when a mandate now fits: a person has just granted one', async () => {
+    const { mandates, asked } = source([undefined, { mandate: MANDATE }]);
+    const { g, verified } = await guard((input) => (input.mandateId ? allow() : { decision: 'deny', reason: 'mandate_required', evaluations: [] }), {
+      mandate: undefined,
+      mandates,
+    });
+    expect((await g.call('issue_credit', {}, () => 'ok')).decision).toBe('allow');
+    expect(asked[1]).toEqual({ tool: 'issue_credit', retry: {} });
+    expect(verified).toHaveLength(2);
+  });
+
+  it('presents no second time when the source has nothing new, and the refusal stands', async () => {
+    const { mandates } = source([{ mandate: MANDATE }, { mandate: MANDATE }]);
+    const { g, verified } = await guard(() => ({ decision: 'deny', reason: 'mandate_required', evaluations: [] }), { mandate: undefined, mandates });
+    await expect(g.call('issue_credit', {}, () => 'ok')).rejects.toMatchObject({ reason: 'mandate_required', mandateId: MANDATE.id });
+    expect(verified).toHaveLength(1);
+  });
+
+  it('asks the source nothing more for a deny with another reason', async () => {
+    const { mandates, asked } = source([undefined]);
+    const { g } = await guard(() => ({ decision: 'deny', reason: 'policy_denied', evaluations: [] }), { mandate: undefined, mandates });
+    await expect(g.call('wire', {}, () => 'ok')).rejects.toMatchObject({ reason: 'policy_denied' });
+    expect(asked).toHaveLength(1);
   });
 });
