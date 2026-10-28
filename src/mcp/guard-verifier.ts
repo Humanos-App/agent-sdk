@@ -22,7 +22,7 @@ import type { ViaMcpClient } from './client.js';
 import type { CallMandate, MandateSource } from '../guard.js';
 import type { ActionRule, ViaEvent, ViaMandateCredential } from '../sdk.js';
 import { unwrapUserParamValues } from '../sdk.js';
-import type { ChallengeGrant, CompiledLike, GuardVerifier, ReportOutcomeInput, VerifyInput, VerifyOutcome } from '../types.js';
+import type { ChallengeGrant, CompiledLike, GuardVerifier, MandateRequestHint, ReportOutcomeInput, VerifyInput, VerifyOutcome } from '../types.js';
 
 /** Raised when the connector could not answer a verifier call — distinct from a deny. */
 export class McpVerifierError extends Error {
@@ -141,6 +141,8 @@ export interface AgentPolicy {
     controls?: { id: string; name: string; rules: string[]; limits: { name: string; value: unknown; description?: string }[] }[];
     /** `mandate`: the mandate controls made for the tool, narrowed to the one the policy names when it names one. */
     mandateControls?: { id: string; name: string }[];
+    /** `mandate`: what to ask a person for (`requestMandate`). */
+    request?: MandateRequestHint;
   }[];
 }
 
@@ -198,6 +200,8 @@ export interface PolicyMandatesOptions {
 export interface PolicyMandates extends MandateSource {
   /** Read the policy and the held mandates again, for the calls after. */
   read(): Promise<{ policy: AgentPolicy; held: GuardMandate[] }>;
+  /** What a person must grant for a tool the policy leaves to a mandate (`get_policy`'s `request`); none for any other. */
+  requestFor(tool: string): Promise<MandateRequestHint | undefined>;
 }
 
 /**
@@ -223,6 +227,10 @@ export function policyMandates(client: ViaMcpClient, agentDid: string, opts: Pol
 
   return {
     read,
+    async requestFor(tool) {
+      const { policy } = await (state ?? read());
+      return policy.tools.find((t) => t.tool === tool && t.access === 'mandate')?.request;
+    },
     async mandateFor(call, retry) {
       const { policy, held } = await (retry || !state ? read() : state);
       const entries = policy.tools.filter((t) => t.tool === call.tool);

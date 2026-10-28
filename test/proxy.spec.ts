@@ -113,7 +113,16 @@ function humanos(held: StandinMandate[] = [SLACK_MANDATE, GMAIL_MANDATE], policy
       if (name === 'get_policy') {
         reads.get_policy++;
         const names = [...new Set(declared.flatMap((d) => (d.tools as { name: string }[]).map((t) => t.name)))];
-        return answer({ agent: args.agentDid, policy: { id: POLICY_URN, version: 1, default: byDefault }, tools: names.map((tool) => ({ tool, access: access(tool), meaning: '' })) });
+        // A Delegate tool's request, as the connector words it: under the control the policy names, else one call's authorization.
+        const request = (tool: string) => {
+          const e = policy[tool];
+          return typeof e === 'object' ? { kind: 'guardrail', actionIds: [e.under] } : e === 'mandate' ? { kind: 'authorization', maxExecutions: 1 } : undefined;
+        };
+        return answer({
+          agent: args.agentDid,
+          policy: { id: POLICY_URN, version: 1, default: byDefault },
+          tools: names.map((tool) => ({ tool, access: access(tool), meaning: '', ...(request(tool) ? { request: request(tool) } : {}) })),
+        });
       }
       // Every organization has a policy (v0 at the least): every challenge names it.
       if (name === 'challenge') return answer({ nonce: `n-${++n}`, aud: 'did:web:org', ttl: 60, iat: 1_757_160_000, policy: POLICY_URN });
@@ -295,7 +304,11 @@ describe('a call the policy decides alone (v0.3 §21.3)', () => {
   it.each([
     ['the policy refuses it', { slack_create_canvas: 'deny' } as StandinPolicy, /Blocked by VIA: the organization’s policy does not allow it/],
     ['its default refuses it', {} as StandinPolicy, /Blocked by VIA: the organization’s policy does not allow it/],
-    ['the policy leaves it to a person, and no mandate covers it', { slack_create_canvas: 'mandate' } as StandinPolicy, /No mandate covers slack_create_canvas \(Slack\)/],
+    [
+      'the policy leaves it to a person with no control, and no mandate covers it',
+      { slack_create_canvas: 'mandate' } as StandinPolicy,
+      /No mandate covers slack_create_canvas \(Slack\).*ask the person to authorize this one call/,
+    ],
     [
       'the policy needs a mandate under a named action',
       { slack_create_canvas: { under: 'urn:via:action:canvas' } } as StandinPolicy,

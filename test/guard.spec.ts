@@ -258,6 +258,37 @@ describe('ViaGuard — the mandate chosen per call (v0.3 §21.3)', () => {
     expect(verified).toHaveLength(1);
   });
 
+  it('a mandate_required deny says what to ask a person for: the controls it names, else what the source read of the policy', async () => {
+    const under = [{ id: 'urn:via:action:credit:v2' }];
+    const named = await guard(() => ({ decision: 'deny', reason: 'mandate_required', evaluations: [], under }), {
+      mandate: undefined,
+      mandates: { mandateFor: () => undefined, requestFor: () => ({ kind: 'authorization', maxExecutions: 1 }) },
+    });
+    await expect(named.g.call('issue_credit', {}, () => 'ok')).rejects.toMatchObject({
+      request: { kind: 'guardrail', actionIds: ['urn:via:action:credit:v2'] },
+    });
+
+    const hint = { kind: 'authorization', maxExecutions: 1 } as const;
+    const fromPolicy = await guard(() => ({ decision: 'deny', reason: 'mandate_required', evaluations: [] }), {
+      mandate: undefined,
+      mandates: { mandateFor: () => undefined, requestFor: () => hint },
+    });
+    await expect(fromPolicy.g.call('wire', {}, () => 'ok')).rejects.toMatchObject({ request: hint });
+  });
+
+  it('under observe, the outcome of a mandate_required deny carries what to ask for', async () => {
+    const under = [{ id: 'urn:via:action:credit:v2' }];
+    const { g } = await guard(() => ({ decision: 'deny', reason: 'mandate_required', evaluations: [], under }), {
+      mandate: undefined,
+      mandates: { mandateFor: () => undefined },
+      mode: 'observe',
+    });
+    expect(await g.call('issue_credit', {}, () => 'ran')).toMatchObject({
+      observed: true,
+      request: { kind: 'guardrail', actionIds: ['urn:via:action:credit:v2'] },
+    });
+  });
+
   it('asks the source nothing more for a deny with another reason', async () => {
     const { mandates, asked } = source([undefined]);
     const { g } = await guard(() => ({ decision: 'deny', reason: 'policy_denied', evaluations: [] }), { mandate: undefined, mandates });

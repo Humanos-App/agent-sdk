@@ -19,6 +19,7 @@ For complete, runnable agents built on it, see
 | **`ViaGuard`** | the gate around every tool call: the mandate it presents, if any → challenge → proof of possession → verify → run or refuse → report the outcome |
 | **`createViaMcpClient`** | the Humanos connector, authenticated with the organization's API key and signing secret |
 | **`McpGuardVerifier`**, **`policyMandates`** | the connector as the guard's verifier, and the mandate each call presents, from the policy (`getPolicy`) and the mandates held (`getMandates`) |
+| **`requestMandate`**, **`waitForMandate`** | ask a person for a mandate a tool needs, under a control `getAction` describes or as a one-call authorization, and wait for their answer (`mandateStatus`) |
 | **`startViaMcpProxy`** | a governing proxy in front of MCP servers you did not write; `refresh()` declares their new tools |
 | **`declareTools`** | tell Humanos which tools an agent can call, each as its server describes it, one call per service |
 | **`startViaMcpServer`** | expose a guarded agent's tools to an MCP host |
@@ -81,6 +82,39 @@ leaves to one: one on the control the policy names first, else any covering the 
 included. Every other call binds the policy alone. A `mandate_required` deny reads both again, and the guard
 presents the call once more when a mandate now fits: a person has just granted one, or the policy changed. Nobody
 is asked to confirm a call: one a policy or a mandate puts behind a step-up is refused `stepup_required`.
+
+### When a tool needs a person's mandate
+
+A `mandate_required` deny says what to ask for in `ViaDeniedError.request`: a guardrail under one of `actionIds`, whose
+limits `getAction` describes, or, with no control for the tool, an authorization in plain words. Whom to ask and the
+limits' values come from your agent's own context:
+
+```ts
+import { getAction, requestMandate, waitForMandate, ViaDeniedError } from '@humanos/agent-sdk';
+
+try {
+  await guard.call('issue_refund', args, issueRefund);
+} catch (e) {
+  if (!(e instanceof ViaDeniedError) || e.reason !== 'mandate_required' || !e.request) throw e;
+  const req =
+    e.request.kind === 'guardrail'
+      ? await requestMandate(client, did, {
+          kind: 'guardrail',
+          actionId: e.request.actionIds[0]!,
+          userParams: limitsFor(await getAction(client, e.request.actionIds[0]!)), // yours: the values the person sets
+          contact,
+        })
+      : await requestMandate(client, did, { kind: 'authorization', name: 'Refund A-1', terms: 'Refund order A-1, €40', contact });
+  show(req.consentCard.link); // the person approves on their own device
+  if ((await waitForMandate(client, req)).phase === 'ACTIVE') await guard.call('issue_refund', args, issueRefund);
+}
+```
+
+An authorization asks for one call, ending in an hour, unless `maxExecutions` and `validUntil` say otherwise: with no
+rules, it opens every tool the policy leaves to a mandate without naming a control. `waitForMandate` returns once the
+person decides (`ACTIVE`, `REJECTED`, `INACTIVE`), or still `PENDING` at the earlier of the consent link's expiry and
+ten minutes (`until` changes it; `signal` stops it). The call after an approval presents the new mandate on its own.
+`mandateStatus` asks once, for a builder that waits its own way.
 
 ## Govern MCP servers you did not write
 

@@ -89,6 +89,10 @@ export type { ViaMcpClient, ViaMcpClientOptions, ViaToolResult } from './mcp/cli
 // my organization's policy let me do?", and the guard's mandate source built on both.
 export { McpGuardVerifier, McpVerifierError, getMandates, getPolicy, policyMandates, coveringMandate, mandateCoverage } from './mcp/guard-verifier.js';
 export type { HeldMandate, GuardMandate, AgentPolicy, ToolAccess, PolicyMandates, PolicyMandatesOptions } from './mcp/guard-verifier.js';
+
+// Asking a person for a mandate: a control's limits, the request, and its answer, waited for.
+export { getAction, requestMandate, mandateStatus, waitForMandate, AUTHORIZATION_DEFAULT_MS, WAIT_DEFAULT_MS } from './mcp/mandate-request.js';
+export type { ActionView, ActionParam, MandateRequestInput, MandateRequested, MandateStatus, WaitForMandateOptions } from './mcp/mandate-request.js';
 export type { StdioTransport } from './mcp/stdio.js';
 
 // The wire contract.
@@ -102,6 +106,7 @@ export type {
   ChallengeGrant,
   // v0.3 §21.4 — who a call is for, and the mandate or policy its PoP binds.
   CallAuthority,
+  MandateRequestHint,
   McpTool,
   McpToolsList,
   ExtractedDraft,

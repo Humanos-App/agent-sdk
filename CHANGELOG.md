@@ -34,6 +34,11 @@ Needs a Humanos platform whose verify decides on the organization's policy first
 - `mandateId` on `GuardCallOutcome`, `GuardCallContext` and `ViaDeniedError`: the mandate the call presented.
 - `createTestVerifier` takes a `policy` (each tool `allow`, `deny` or `mandate`, and a `default`) that decides first;
   its challenge then names `TEST_POLICY`.
+- Asking a person for a mandate: `getAction` (a control's limits, the connector's `get_action`), `requestMandate`
+  (a guardrail under a control, or an authorization for one call ending in an hour by default), `mandateStatus`, and
+  `waitForMandate` (until the person decides, the consent link expires or ten minutes pass, or an abort).
+- `ViaDeniedError.request` and `GuardCallOutcome.request` on `mandate_required`: what to ask for, the controls the deny
+  names, else `get_policy`'s `request` (`AgentPolicy.tools[].request`, `MandateSource.requestFor`). The proxy says it.
 
 ## 0.2.1
 
