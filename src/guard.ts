@@ -2,7 +2,7 @@ import { actionHash, evaluateRules, jwkThumbprint, policyActionHash, unwrapUserP
 import type { RuleEvaluation, ViaMandateCredential } from './sdk.js';
 import { buildDelegatedPoP, type ViaAgentKey } from './key-provider.js';
 import { outcomeParams, type AgentOutcomeKind } from './events.js';
-import type { CallAuthority, ChallengeGrant, CompiledLike, GuardVerifier, VerifyOutcome } from './types.js';
+import type { CallAuthority, ChallengeGrant, CompiledLike, GuardVerifier, MandateRequestHint, VerifyOutcome } from './types.js';
 
 export type { GuardVerifier, VerifyOutcome } from './types.js';
 
@@ -14,6 +14,8 @@ export class ViaDeniedError extends Error {
     public readonly under?: { id: string }[],
     /** The mandate the call presented; none when the policy alone decided it. */
     public readonly mandateId?: string,
+    /** With `mandate_required`: what to ask a person for (`requestMandate`). */
+    public readonly request?: MandateRequestHint,
   ) {
     super(`via: tool call denied (${reason ?? 'unknown'})`);
     this.name = 'ViaDeniedError';
@@ -32,6 +34,8 @@ export interface GuardCallOutcome<T = unknown> {
   under?: { id: string }[];
   /** The mandate the call presented; none when the policy alone decided it. */
   mandateId?: string;
+  /** On a `mandate_required` deny: what to ask a person for (`requestMandate`). */
+  request?: MandateRequestHint;
 }
 
 /** The mandate one call presents, with its pinned action for the advisory pre-flight. */
@@ -54,6 +58,8 @@ export interface MandateSource {
     call: { tool: string; params: Record<string, unknown> },
     retry?: { refused?: string; under?: { id: string }[] },
   ): CallMandate | undefined | Promise<CallMandate | undefined>;
+  /** What a person must grant for the tool when the policy leaves it to a mandate, as the source last read it. */
+  requestFor?(tool: string): MandateRequestHint | undefined | Promise<MandateRequestHint | undefined>;
 }
 
 export interface GuardOptions {
@@ -184,6 +190,7 @@ export class ViaGuard {
     const decisionId = outcome.event?.id ?? outcome.decisionEventId;
     const mandateId = presented?.mandate.id;
     const presentedAs = mandateId ? { mandateId } : {};
+    const request = outcome.decision === 'deny' && outcome.reason === 'mandate_required' ? await this.requestFor(tool, outcome.under) : undefined;
 
     if (outcome.decision === 'allow') {
       return {
@@ -202,11 +209,18 @@ export class ViaGuard {
         evaluations: outcome.evaluations,
         observed: true,
         ...(outcome.under ? { under: outcome.under } : {}),
+        ...(request ? { request } : {}),
         ...presentedAs,
         result: await this.execute<T>(args, impl, decisionId, outcome, mandateId),
       };
     }
-    throw new ViaDeniedError(outcome.reason, outcome.evaluations, outcome.under, mandateId);
+    throw new ViaDeniedError(outcome.reason, outcome.evaluations, outcome.under, mandateId, request);
+  }
+
+  /** What to ask a person for: the controls the refusal named (`under`), else what the source read of the policy. */
+  private async requestFor(tool: string, under?: { id: string }[]): Promise<MandateRequestHint | undefined> {
+    if (under?.length) return { kind: 'guardrail', actionIds: under.map((u) => u.id) };
+    return this.opts.mandates?.requestFor?.(tool);
   }
 
   /** The mandate this call presents: the fixed one, the source's choice, or none. */

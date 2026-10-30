@@ -111,6 +111,12 @@ export interface GuardVerifier {
   reportOutcome(input: ReportOutcomeInput): Promise<{ recorded: unknown } | { rejected: string }> | { recorded: unknown } | { rejected: string };
 }
 
+/**
+ * What a call refused `mandate_required` needs a person to grant: a guardrail under one of `actionIds` (the control's
+ * version URNs, what a mandate request takes as `actionId`), or with no control an authorization for one call.
+ */
+export type MandateRequestHint = { kind: 'guardrail'; actionIds: string[] } | { kind: 'authorization'; maxExecutions: 1 };
+
 // ── MCP shapes (the connector's tool surface) ────────────────────────────────
 
 export interface McpTool {

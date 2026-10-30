@@ -22,7 +22,7 @@
  */
 import { ViaDeniedError, ViaGuard } from '../guard.js';
 import type { ViaAgentKey } from '../key-provider.js';
-import type { VerifyOutcome } from '../types.js';
+import type { MandateRequestHint, VerifyOutcome } from '../types.js';
 import type { ViaMcpClient } from './client.js';
 import { declareTools, type DeclaredTool, type ServiceDeclaration } from './declare.js';
 import { McpGuardVerifier, coveringMandate, policyMandates, type AgentPolicy, type GuardMandate } from './guard-verifier.js';
@@ -228,12 +228,14 @@ export async function startViaMcpProxy(cfg: ViaMcpProxyConfig): Promise<ViaMcpPr
   await mandates.read();
   const guard = new ViaGuard({ agentKey: cfg.agentKey, agentDid: cfg.did, verifier, mandates, mode: cfg.mode ?? 'enforce' });
 
-  const noMandate = (tool: ProxiedTool, under?: { id: string }[], held?: boolean): string =>
+  const noMandate = (tool: ProxiedTool, request?: MandateRequestHint, held?: boolean): string =>
     `${held ? 'The mandate this agent holds does not cover' : 'No mandate covers'} ${tool.upstreamName} (${tool.service}). ` +
     `Nothing was sent to ${tool.service}. ` +
-    (under?.length
-      ? `The organization's policy needs a person's mandate under ${under.map((u) => u.id).join(' or ')} for it: ask the person for one.`
-      : `The organization's policy leaves it to a person's mandate: the person accepts one on a control made for ${tool.service}.`);
+    (request?.kind === 'guardrail'
+      ? `The organization's policy needs a person's mandate under ${request.actionIds.join(' or ')} for it: ask the person for one (its limits: get_action).`
+      : request?.kind === 'authorization'
+        ? `The organization's policy needs a person's authorization for it, and names no control: ask the person to authorize this one call.`
+        : `The organization's policy leaves it to a person's mandate: the person accepts one on a control made for ${tool.service}.`);
 
   const callTool = async (name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> => {
     const tool = byName.get(name);
@@ -252,7 +254,7 @@ export async function startViaMcpProxy(cfg: ViaMcpProxyConfig): Promise<ViaMcpPr
       return { content: r.content, ...(r.structuredContent !== undefined ? { structuredContent: r.structuredContent } : {}) };
     } catch (e) {
       // The policy leaves the tool to a person's mandate, and none this agent holds fits: say which one it needs.
-      if (e instanceof ViaDeniedError && e.reason === 'mandate_required') return text(noMandate(tool, e.under, !!e.mandateId), true);
+      if (e instanceof ViaDeniedError && e.reason === 'mandate_required') return text(noMandate(tool, e.request, !!e.mandateId), true);
       if (e instanceof ViaDeniedError) return text(`Blocked by VIA: ${plainReason(e.reason)}. Nothing was sent to ${tool.service}. Do not retry.`, true);
       if (e instanceof UpstreamToolError) return { content: e.result.content, isError: true };
       return text(`Error: ${e instanceof Error ? e.message : String(e)}`, true);

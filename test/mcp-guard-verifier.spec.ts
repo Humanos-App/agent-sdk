@@ -4,6 +4,7 @@ import type { ViaMcpClient, ViaToolResult } from '../src/mcp/client.js';
 import type { ViaMandateCredential } from '../src/sdk.js';
 import { actionHash } from '../src/sdk.js';
 import { outcomeParams } from '../src/events.js';
+import type { MandateRequestHint } from '../src/types.js';
 
 /** A client double: records every tools/call and answers from a script. */
 function fakeClient(answers: Record<string, ViaToolResult | ((args: Record<string, unknown>) => ViaToolResult)>) {
@@ -205,6 +206,21 @@ describe('policyMandates — a mandate only for a tool the policy leaves to one 
     await expect(source.mandateFor({ tool: 'wire', params: { tool: 'wire' } })).rejects.toBeInstanceOf(McpVerifierError);
     c.state.fail = false;
     expect((await source.mandateFor({ tool: 'wire', params: { tool: 'wire' } }))?.mandate.id).toBe('authz');
+  });
+
+  it('says what a Delegate tool needs from the policy it read, and nothing for any other tool', async () => {
+    const request: MandateRequestHint = { kind: 'guardrail', actionIds: ['urn:via:action:credit:v2'] };
+    const c = connector(
+      policyOf([
+        { tool: 'issue_credit', access: 'mandate', meaning: '', request },
+        { tool: 'search', access: 'allow', meaning: '' },
+      ]),
+      [],
+    );
+    const source = policyMandates(c.client, AGENT);
+    expect(await source.requestFor('issue_credit')).toEqual(request);
+    expect(await source.requestFor('search')).toBeUndefined();
+    expect(c.reads).toEqual({ get_policy: 1, get_mandate: 1 });
   });
 
   it('coveringMandate ranks by coverage first: a preferred control that does not cover the tool is never chosen', () => {
