@@ -12,27 +12,22 @@
  * At start: the servers' tools are merged into one surface (a name two servers share is prefixed
  * with the service), declared to Humanos as the servers describe them, verbatim (`declareTools`) —
  * so the Tools tab fills itself with facts, not with what a model chose to say — and the mandates
- * this actor holds are fetched. Declaring new tools is the agent's to do: when its servers' tools
- * change, it calls `refresh`, which lists them again and declares only the services whose
- * declaration changed. Per call: the mandate is picked (the person's `allowed_tools` or a pinned
- * action's `tools` naming the tool, else a pinned action declaring every parameter the tool takes,
- * else a plain authorization), a guard per mandate verifies, the outcome is reported. A call no
- * mandate covers is verified on the organization's policy instead (v0.3 §21.4), which may allow it,
- * refuse it, or leave it to a person's mandate. A call that needs a co-sign returns the approve link
- * at once — an MCP tool call must not hang for minutes — and the retry with the same arguments
- * presents that approval by its id.
+ * the organization's policy and the mandates this actor holds are read. Declaring new tools is the
+ * agent's to do: when its servers' tools change, it calls `refresh`, which lists them again and
+ * declares only the services whose declaration changed. Per call, one guard for the agent: the
+ * organization's policy decides first (v0.3 §21.3), and a held mandate is presented only for a
+ * tool the policy leaves to a person's mandate (the person's `allowed_tools` or a pinned action's
+ * `tools` naming the tool, else a pinned action declaring every parameter the tool takes, else a
+ * plain authorization; one on the control the policy names first). The outcome is reported.
  */
 import { ViaDeniedError, ViaGuard } from '../guard.js';
 import type { ViaAgentKey } from '../key-provider.js';
-import { unwrapUserParamValues } from '../sdk.js';
-import type { StepUpRef, VerifyOutcome } from '../types.js';
+import type { MandateRequestHint, VerifyOutcome } from '../types.js';
 import type { ViaMcpClient } from './client.js';
 import { declareTools, type DeclaredTool, type ServiceDeclaration } from './declare.js';
-import { McpGuardVerifier, getMandates } from './guard-verifier.js';
+import { McpGuardVerifier, coveringMandate, policyMandates, type AgentPolicy, type GuardMandate } from './guard-verifier.js';
 import { defaultPlainReason, type JsonRpcMessage } from './server.js';
 import type { Upstream, UpstreamCallExtra, UpstreamResult, UpstreamTool } from './upstream.js';
-
-type Held = Awaited<ReturnType<typeof getMandates>>[number];
 
 /** One tool of the merged surface. */
 export interface ProxiedTool {
@@ -58,18 +53,11 @@ export interface ViaMcpProxyConfig {
   onWarning?: (message: string) => void;
   /** `observe` records denials and runs the tool anyway (the adoption ramp); default `enforce`. */
   mode?: 'observe' | 'enforce';
-  /** Override which held mandate a call runs under. */
-  mandateFor?: (tool: ProxiedTool, held: Held[]) => Held | undefined;
   /**
-   * Verify a call no mandate covers on the organization's policy (v0.3 §21.4) — default true. False refuses it
-   * here, as agent-sdk 0.1 did, without asking Humanos.
+   * Override which held mandate a call presents, for a tool the organization's policy leaves to a person's mandate.
+   * `preferred`: the action versions the policy names for it.
    */
-  policy?: boolean;
-  /**
-   * Wait for the person's co-sign in place (a test, or a host that renders MCP elicitation).
-   * Without it a step-up returns the approve link to the agent and the retry carries the approval.
-   */
-  onStepUp?: (info: { tool: string; params: Record<string, unknown>; stepUp?: StepUpRef }) => Promise<boolean>;
+  mandateFor?: (tool: ProxiedTool, held: GuardMandate[], preferred: string[]) => GuardMandate | undefined;
   /**
    * What to add to the upstream call now that a decision exists — `_meta`, and headers over HTTP.
    * The seam for carrying the verifier's decision to the server that executes the call; what goes
@@ -79,15 +67,13 @@ export interface ViaMcpProxyConfig {
   decorateCall?: (ctx: {
     tool: ProxiedTool;
     args: Record<string, unknown>;
-    /** The mandate the call runs under; absent for one decided on the organization's policy (v0.3 §21.4). */
+    /** The mandate the call presented; absent for one the organization's policy decided alone (v0.3 §21.3). */
     mandateId?: string;
     outcome: VerifyOutcome;
   }) => UpstreamCallExtra | undefined | Promise<UpstreamCallExtra | undefined>;
   plainReason?: (reason?: string) => string;
   serverInfo?: { name: string; version: string };
   instructions?: string;
-  /** How stale the mandate list may be before a call with no match re-fetches it (default 5 s). */
-  mandateRefreshMs?: number;
 }
 
 export interface ViaMcpProxy {
@@ -102,16 +88,9 @@ export interface ViaMcpProxy {
    * each service whose declaration changed. The agent calls it when it knows its tools changed.
    */
   refresh(service?: string): Promise<ServiceDeclaration[]>;
-  refreshMandates(): Promise<Held[]>;
+  /** Read the organization's policy and the held mandates again, for the calls after. */
+  refreshMandates(): Promise<{ policy: AgentPolicy; held: GuardMandate[] }>;
   close(): Promise<void>;
-}
-
-/** Raised inside the guard when a step-up is open and nobody waits for it in place. */
-export class ViaStepUpPendingError extends Error {
-  constructor(readonly stepUp: StepUpRef | undefined) {
-    super('step-up pending: the person has not approved this call yet');
-    this.name = 'ViaStepUpPendingError';
-  }
 }
 
 class UpstreamToolError extends Error {
@@ -151,35 +130,16 @@ export function declaredParams(schema: Record<string, unknown> | undefined): Rec
   return out;
 }
 
+/** The parameters a tool takes, from its schema. */
+const paramsOf = (tool: ProxiedTool): string[] => Object.keys(((tool.definition.inputSchema ?? {}) as { properties?: Record<string, unknown> }).properties ?? {});
+
 /**
- * Which held mandate a call runs under. Exact first — the person's `allowed_tools`, or the pinned
- * action's `tools` (v0.3 §0.6.1), names the tool — then a pinned action that lists no tools and
- * declares every parameter the tool takes, then a plain authorization. A mandate whose
- * `allowed_tools`, or whose action's `tools`, leaves the tool out never matches: the person already
- * said no, or the action would refuse it `tool_not_covered`.
+ * Which held mandate a call presents (`coveringMandate`): exact first — the person's `allowed_tools`, or the pinned
+ * action's `tools` (v0.3 §0.6.1), names the tool — then a pinned action that lists no tools and declares every
+ * parameter the tool takes, then a plain authorization; at each rank, one pinning a `preferred` action version first.
  */
-export function pickMandate(tool: ProxiedTool, held: Held[]): Held | undefined {
-  const params = Object.keys(((tool.definition.inputSchema ?? {}) as { properties?: Record<string, unknown> }).properties ?? {});
-  const rank = (h: Held): number => {
-    const up = unwrapUserParamValues(h.mandate.credentialSubject.mandate.userParams as never);
-    if (Array.isArray(up.allowed_tools)) return (up.allowed_tools as unknown[]).includes(tool.upstreamName) ? 3 : 0;
-    if (!h.action) return 1;
-    const listed = h.action.content?.tools;
-    if (Array.isArray(listed)) return listed.includes(tool.upstreamName) ? 3 : 0;
-    const declared = ((h.action.content ?? {}) as { executionParams?: Record<string, unknown> }).executionParams ?? {};
-    // A tool with no parameters says nothing about which action is its: only an exact match or an authorization.
-    return params.length > 0 && params.every((p) => p in declared) ? 2 : 0;
-  };
-  let best: Held | undefined;
-  let bestRank = 0;
-  for (const h of held) {
-    const r = rank(h);
-    if (r > bestRank) {
-      best = h;
-      bestRank = r;
-    }
-  }
-  return best;
+export function pickMandate(tool: ProxiedTool, held: GuardMandate[], preferred: string[] = []): GuardMandate | undefined {
+  return coveringMandate(tool.upstreamName, paramsOf(tool), held, preferred);
 }
 
 export async function startViaMcpProxy(cfg: ViaMcpProxyConfig): Promise<ViaMcpProxy> {
@@ -257,91 +217,44 @@ export async function startViaMcpProxy(cfg: ViaMcpProxyConfig): Promise<ViaMcpPr
   const services = [...new Set(tools.map((t) => t.service))];
   await declareChanged();
 
-  // ── the mandates this actor holds ──
-  let held: Held[] = [];
-  let fetchedAt = 0;
-  const refreshMandates = async (): Promise<Held[]> => {
-    held = await getMandates(cfg.humanos, cfg.did);
-    fetchedAt = Date.now();
-    return held;
-  };
-  await refreshMandates();
+  // ── the policy and the mandates this actor holds, read once and again on a `mandate_required` ──
+  const mandates = policyMandates(cfg.humanos, cfg.did, {
+    // Rules and policies speak of the upstream's name: a name two services share picks by the first one's schema.
+    pick: (call, held, preferred) => {
+      const tool = tools.find((t) => t.upstreamName === call.tool);
+      return tool ? pick(tool, held, preferred) : coveringMandate(call.tool, [], held, preferred);
+    },
+  });
+  await mandates.read();
+  const guard = new ViaGuard({ agentKey: cfg.agentKey, agentDid: cfg.did, verifier, mandates, mode: cfg.mode ?? 'enforce' });
 
-  // One guard per mandate, and one for calls no mandate covers (on the policy); step-ups opened for exactly
-  // one call, keyed by its authority + tool + arguments.
-  const guards = new Map<string, ViaGuard>();
-  const pending = new Map<string, StepUpRef>();
-  const POLICY = 'policy';
-  const termsKey = (authority: string, tool: string, args: Record<string, unknown>): string => `${authority}|${tool}|${stable(args)}`;
-  const guardFor = (h: Held | undefined): ViaGuard => {
-    const authority = h?.mandate.id ?? POLICY;
-    let g = guards.get(authority);
-    if (!g) {
-      g = new ViaGuard({
-        ...(h ? { mandate: h.mandate, compiled: h.compiled } : { agentDid: cfg.did }),
-        agentKey: cfg.agentKey,
-        verifier,
-        mode: cfg.mode ?? 'enforce',
-        onRechallenge: async (info) => {
-          const { tool: _discriminator, ...args } = info.params;
-          if (info.stepUp) pending.set(termsKey(authority, info.tool, args), info.stepUp);
-          if (cfg.onStepUp) return cfg.onStepUp(info);
-          throw new ViaStepUpPendingError(info.stepUp);
-        },
-      });
-      guards.set(authority, g);
-    }
-    return g;
-  };
-  const noMandate = (tool: ProxiedTool, under?: { id: string }[], held?: boolean): string =>
+  const noMandate = (tool: ProxiedTool, request?: MandateRequestHint, held?: boolean): string =>
     `${held ? 'The mandate this agent holds does not cover' : 'No mandate covers'} ${tool.upstreamName} (${tool.service}). ` +
     `Nothing was sent to ${tool.service}. ` +
-    (under?.length
-      ? `The organization's policy needs a person's mandate under ${under.map((u) => u.id).join(' or ')} for it: ask the person for one.`
-      : `A mandate comes from a person: the organization publishes a guardrail for ${tool.service} and the person accepts one under it.`);
+    (request?.kind === 'guardrail'
+      ? `The organization's policy needs a person's mandate under ${request.actionIds.join(' or ')} for it: ask the person for one (its limits: get_action).`
+      : request?.kind === 'authorization'
+        ? `The organization's policy needs a person's authorization for it, and names no control: ask the person to authorize this one call.`
+        : `The organization's policy leaves it to a person's mandate: the person accepts one on a control made for ${tool.service}.`);
 
   const callTool = async (name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> => {
     const tool = byName.get(name);
     if (!tool) return text(`Unknown tool ${name}.`, true);
-    let h = pick(tool, held);
-    if (!h && Date.now() - fetchedAt > (cfg.mandateRefreshMs ?? 5_000)) h = pick(tool, await refreshMandates()); // a person may have just accepted one
-    // No mandate: the organization's policy decides (v0.3 §21.4), unless the proxy was told not to ask.
-    if (!h && cfg.policy === false) return text(noMandate(tool), true);
-    const key = termsKey(h?.mandate.id ?? POLICY, tool.upstreamName, args);
-    const approval = pending.get(key);
     try {
-      const out = await guardFor(h).call<UpstreamResult>(
-        tool.upstreamName,
-        args,
-        async (a, ctx) => {
-          const extra = cfg.decorateCall
-            ? await cfg.decorateCall({ tool, args: a, ...(h ? { mandateId: h.mandate.id } : {}), outcome: ctx.outcome })
-            : undefined;
-          const r = await tool.upstream.callTool(tool.upstreamName, a, extra);
-          if (r.isError) throw new UpstreamToolError(r); // reported as ACTION_FAILED, then surfaced as the server said it
-          return r;
-        },
-        approval ? { stepUpId: approval.id } : {},
-      );
-      pending.delete(key);
+      const out = await guard.call<UpstreamResult>(tool.upstreamName, args, async (a, ctx) => {
+        const extra = cfg.decorateCall
+          ? await cfg.decorateCall({ tool, args: a, ...(ctx.mandateId ? { mandateId: ctx.mandateId } : {}), outcome: ctx.outcome })
+          : undefined;
+        const r = await tool.upstream.callTool(tool.upstreamName, a, extra);
+        if (r.isError) throw new UpstreamToolError(r); // reported as ACTION_FAILED, then surfaced as the server said it
+        return r;
+      });
       const r = out.result;
       if (!r) return text('', false);
       return { content: r.content, ...(r.structuredContent !== undefined ? { structuredContent: r.structuredContent } : {}) };
     } catch (e) {
-      if (e instanceof ViaStepUpPendingError) {
-        const link = e.stepUp?.approveLink;
-        return text(
-          `This call needs the person's approval before it reaches ${tool.service}${link ? `: ${link}` : ''}${e.stepUp?.expiresAt ? ` (until ${e.stepUp.expiresAt})` : ''}. ` +
-            `Show them the link; once they have approved, call ${tool.exposedName} again with exactly the same arguments.`,
-          true,
-        );
-      }
-      pending.delete(key);
-      // The policy leaves the tool to a person's mandate, or the organization has none: as with no policy at all.
-      // Under a mandate, the policy may name the one the tool needs (`under`, v0.3 §21.3).
-      if (e instanceof ViaDeniedError && e.reason === 'mandate_required' && (!h || e.under?.length)) {
-        return text(noMandate(tool, e.under, !!h), true);
-      }
+      // The policy leaves the tool to a person's mandate, and none this agent holds fits: say which one it needs.
+      if (e instanceof ViaDeniedError && e.reason === 'mandate_required') return text(noMandate(tool, e.request, !!e.mandateId), true);
       if (e instanceof ViaDeniedError) return text(`Blocked by VIA: ${plainReason(e.reason)}. Nothing was sent to ${tool.service}. Do not retry.`, true);
       if (e instanceof UpstreamToolError) return { content: e.result.content, isError: true };
       return text(`Error: ${e instanceof Error ? e.message : String(e)}`, true);
@@ -350,8 +263,8 @@ export async function startViaMcpProxy(cfg: ViaMcpProxyConfig): Promise<ViaMcpPr
 
   const instructions =
     cfg.instructions ??
-    `Tools from ${services.join(', ')}, governed by VIA: every call is verified against a mandate a person granted before it reaches the service. ` +
-      'A blocked call says why — do not retry it. A call that needs the person\'s approval returns a link: show it to them, and once they have approved call the same tool again with the same arguments.';
+    `Tools from ${services.join(', ')}, governed by VIA: every call is verified against the organization's policy, and a mandate a person granted where the policy asks for one, before it reaches the service. ` +
+      'A blocked call says why — do not retry it.';
 
   const handleRpc = async (msg: JsonRpcMessage): Promise<JsonRpcMessage | null> => {
     const { id, method, params } = msg;
@@ -402,7 +315,7 @@ export async function startViaMcpProxy(cfg: ViaMcpProxyConfig): Promise<ViaMcpPr
       return { services: [...declaredAs.keys()], tools: tools.filter((t) => declaredAs.has(t.service)).length };
     },
     refresh,
-    refreshMandates,
+    refreshMandates: () => mandates.read(),
     close: async () => {
       await Promise.all(upstreams.map((u) => u.close()));
     },

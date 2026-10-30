@@ -26,9 +26,9 @@ export {
 } from './key-provider.js';
 export type { ViaAgentKey, ConfinementEvidence, Assurance, Binding } from './key-provider.js';
 
-// The PEP — every tool call: challenge → PoP → verify → execute/refuse/step-up.
+// The PEP — every tool call: the mandate it presents, if any → challenge → PoP → verify → execute/refuse.
 export { ViaGuard, ViaDeniedError } from './guard.js';
-export type { GuardOptions, GuardCallOutcome, GuardCallContext } from './guard.js';
+export type { GuardOptions, GuardCallOutcome, GuardCallContext, CallMandate, MandateSource } from './guard.js';
 
 // The platform transport + the delegation ceremony.
 export { MiniPlatformClient, delegationParams } from './client.js';
@@ -45,7 +45,7 @@ export { createStdioTransport } from './mcp/stdio.js';
 
 // The governing proxy — ViaGuard in front of MCP servers you did not write (Slack's, Gmail's, …):
 // the servers' tools merged, declared to Humanos by service, every call verified before it reaches them.
-export { startViaMcpProxy, pickMandate, declaredParams, ViaStepUpPendingError } from './mcp/proxy.js';
+export { startViaMcpProxy, pickMandate, declaredParams } from './mcp/proxy.js';
 export type { ViaMcpProxyConfig, ViaMcpProxy, ProxiedTool } from './mcp/proxy.js';
 export { connectUpstream, inProcessUpstream } from './mcp/upstream.js';
 export type { Upstream, UpstreamSpec, UpstreamServer, UpstreamTool, UpstreamResult, UpstreamCallExtra } from './mcp/upstream.js';
@@ -54,7 +54,6 @@ export type { Upstream, UpstreamSpec, UpstreamServer, UpstreamTool, UpstreamResu
 // call per service.
 export { declareTools, DECLARE_TOOLS_MAX } from './mcp/declare.js';
 export type { DeclaredTool, DeclareToolsOptions, ServiceDeclaration } from './mcp/declare.js';
-export type { StepUpRef } from './types.js';
 
 // EXTRACTION — parse an already-built agent's tool surface into a VIAAction draft. Params and
 // descriptions are derived; `rules`/`userParams` are ALWAYS empty (R8), because constraints are
@@ -85,10 +84,15 @@ export type { ImportActionOptions, ImportActionResult } from './platform/import-
 export { createViaMcpClient, signRequest, ViaMcpAuthError } from './mcp/client.js';
 export type { ViaMcpClient, ViaMcpClientOptions, ViaToolResult } from './mcp/client.js';
 
-// The GuardVerifier over that client — `ViaGuard` unchanged, the connector as the verifier
-// (flow B in spec/END-TO-END-FLOWS.md), plus the startup question "which mandates do I hold?".
-export { McpGuardVerifier, McpVerifierError, getMandates } from './mcp/guard-verifier.js';
-export type { HeldMandate } from './mcp/guard-verifier.js';
+// The GuardVerifier over that client — the connector as the verifier (flow B in
+// spec/END-TO-END-FLOWS.md), plus the startup questions "which mandates do I hold?" and "what does
+// my organization's policy let me do?", and the guard's mandate source built on both.
+export { McpGuardVerifier, McpVerifierError, getMandates, getPolicy, policyMandates, coveringMandate, mandateCoverage } from './mcp/guard-verifier.js';
+export type { HeldMandate, GuardMandate, AgentPolicy, ToolAccess, PolicyMandates, PolicyMandatesOptions } from './mcp/guard-verifier.js';
+
+// Asking a person for a mandate: a control's limits, the request, and its answer, waited for.
+export { getAction, requestMandate, mandateStatus, waitForMandate, AUTHORIZATION_DEFAULT_MS, WAIT_DEFAULT_MS } from './mcp/mandate-request.js';
+export type { ActionView, ActionParam, MandateRequestInput, MandateRequested, MandateStatus, WaitForMandateOptions } from './mcp/mandate-request.js';
 export type { StdioTransport } from './mcp/stdio.js';
 
 // The wire contract.
@@ -100,10 +104,9 @@ export type {
   VerifyInput,
   ReportOutcomeInput,
   ChallengeGrant,
-  // v0.3 §21.4 — a call with no mandate, on the organization's policy.
-  PolicyChallengeGrant,
-  PolicyVerifyInput,
-  PolicyReportOutcomeInput,
+  // v0.3 §21.4 — who a call is for, and the mandate or policy its PoP binds.
+  CallAuthority,
+  MandateRequestHint,
   McpTool,
   McpToolsList,
   ExtractedDraft,

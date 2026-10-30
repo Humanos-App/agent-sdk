@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.3.0: the policy first
+
+Needs a Humanos platform whose verify decides on the organization's policy first and names the agent on every call;
+0.2.x mandate calls are refused there. The bundled protocol SDK is unchanged (sdk-v03 0.6.2).
+
+**Breaking**
+
+- `GuardVerifier` is three methods, each naming the agent and what the proof binds (`CallAuthority`: `mandateId`
+  or, with none, `policy`): `challenge({ agentDid, mandateId? })`, which may answer `{ refused }`, `verify` and
+  `reportOutcome`. `challengeUnderPolicy`, `verifyUnderPolicy`, `reportOutcomeUnderPolicy`, `PolicyChallengeGrant`,
+  `PolicyVerifyInput` and `PolicyReportOutcomeInput` are gone; `VerifyInput` and `ReportOutcomeInput` carry the
+  mandate's id, not the mandate. `ChallengeGrant` names the `policy`.
+- `ViaGuard` needs `agentDid`. One guard per agent: `mandates` chooses each call's mandate; `mandate` (with
+  `compiled`) presents one on every call, for a verifier with no policy.
+- No step-up: `VerifyOutcome.decision` is `allow` or `deny`. Removed: `onRechallenge`, `call`'s `stepUpId`,
+  `VerifyInput.stepUpSatisfied` and `stepUpId`, `StepUpRef`, `ViaStepUpPendingError`, the proxy's `onStepUp`,
+  `startViaMcpServer`'s `onStepUp` and `sendRequest`, `MiniPlatformClient.requestStepUp` and `stepUpStatus`, and
+  `createTestVerifier`'s `stepUpTools`, `approveStepUp` and `onRechallenge`.
+- The proxy runs one guard and presents a mandate only for a tool the policy leaves to one. `policy: false` and
+  `mandateRefreshMs` are gone; `mandateFor` takes `(tool, held, preferred)`; `refreshMandates()` reads the policy
+  too.
+- `getMandates` returns `GuardMandate[]`.
+
+**New**
+
+- `policyMandates(client, did)`, the guard's `MandateSource` on the connector's `get_policy` and `get_mandate`: a
+  held mandate only for a tool the policy leaves to one, on the control it names first. A `mandate_required` deny
+  reads both again, and the guard presents the call once more when a mandate now fits.
+- `getPolicy(client, did)`, with `AgentPolicy` and `ToolAccess`; `coveringMandate` and `mandateCoverage`, the
+  ranking `pickMandate` uses.
+- `VerifyOutcome.unset`: the policy's default decided (an allow so decided has `enforcement: "none"`).
+- `mandateId` on `GuardCallOutcome`, `GuardCallContext` and `ViaDeniedError`: the mandate the call presented.
+- `createTestVerifier` takes a `policy` (each tool `allow`, `deny` or `mandate`, and a `default`) that decides first;
+  its challenge then names `TEST_POLICY`.
+- Asking a person for a mandate: `getAction` (a control's limits, the connector's `get_action`), `requestMandate`
+  (a guardrail under a control, or an authorization for one call ending in an hour by default), `mandateStatus`, and
+  `waitForMandate` (until the person decides, the consent link expires or ten minutes pass, or an abort).
+- `ViaDeniedError.request` and `GuardCallOutcome.request` on `mandate_required`: what to ask for, the controls the deny
+  names, else `get_policy`'s `request` (`AgentPolicy.tools[].request`, `MandateSource.requestFor`). The proxy says it.
+
 ## 0.2.1
 
 - The bundled protocol SDK is sdk-v03 0.6.2 (the README's Install snippet): the same API, built with

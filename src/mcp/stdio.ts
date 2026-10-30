@@ -4,8 +4,7 @@
  * all logs go to stderr.
  *
  * Bidirectional: the transport can also SEND server→client requests
- * (elicitation) — create it FIRST, pass its `sendRequest` into
- * `startViaMcpServer`, then `run(server)`.
+ * (elicitation) through `sendRequest`, then `run(server)`.
  */
 import { createInterface } from 'node:readline';
 import type { JsonRpcMessage, ViaMcpServer } from './server.js';
@@ -45,10 +44,10 @@ export function createStdioTransport(): StdioTransport {
         return; // ignore non-JSON noise
       }
       if (msg.method === 'initialize') {
-        // Diagnostic: what did this client declare? (Is in-app approval / elicitation available?)
+        // Diagnostic: what did this client declare?
         const caps = (msg.params?.capabilities ?? {}) as Record<string, unknown>;
         process.stderr.write(
-          `  client: ${JSON.stringify((msg.params?.clientInfo as Record<string, unknown>) ?? {})} · elicitation: ${caps.elicitation ? 'yes (in-app approval)' : 'no (approve on the dashboard)'}\n`,
+          `  client: ${JSON.stringify((msg.params?.clientInfo as Record<string, unknown>) ?? {})} · elicitation: ${caps.elicitation ? 'yes' : 'no'}\n`,
         );
       }
       if (msg.method !== undefined) {

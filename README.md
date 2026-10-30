@@ -1,8 +1,8 @@
 # @humanos/agent-sdk
 
-Put an AI agent under a **mandate**: a signed, bounded permission a person grants. The agent holds
-its own key; every tool call is proved with it and verified by Humanos *before* the tool runs, and
-every decision and outcome is written to a signed, hash-chained record.
+Put an AI agent under its organization's **policy**, and a **mandate** where the policy asks for one: a signed,
+bounded permission a person grants. The agent holds its own key; every tool call is proved with it and verified by
+Humanos *before* the tool runs, and every decision and outcome is written to a signed, hash-chained record.
 
 The VIA protocol itself — credentials, events, verification — is
 [`@humanos/via-sdk-v03`](https://github.com/Humanos-App), a peer dependency. This package is the
@@ -16,9 +16,10 @@ For complete, runnable agents built on it, see
 | | |
 |---|---|
 | **Keys** — `softwareKey`, `deviceSelfKey`, `custodialKey`, `attestedKey` | where the agent's key lives, and the evidence Humanos grades it on (v0.3 §16) |
-| **`ViaGuard`** | the gate around every tool call: challenge → proof of possession → verify → run, refuse, or wait for the person's approval (step-up) → report the outcome |
+| **`ViaGuard`** | the gate around every tool call: the mandate it presents, if any → challenge → proof of possession → verify → run or refuse → report the outcome |
 | **`createViaMcpClient`** | the Humanos connector, authenticated with the organization's API key and signing secret |
-| **`McpGuardVerifier`**, **`getMandates`** | the connector as the guard's verifier, and "which mandates do I hold?" |
+| **`McpGuardVerifier`**, **`policyMandates`** | the connector as the guard's verifier, and the mandate each call presents, from the policy (`getPolicy`) and the mandates held (`getMandates`) |
+| **`requestMandate`**, **`waitForMandate`** | ask a person for a mandate a tool needs, under a control `getAction` describes or as a one-call authorization, and wait for their answer (`mandateStatus`) |
 | **`startViaMcpProxy`** | a governing proxy in front of MCP servers you did not write; `refresh()` declares their new tools |
 | **`declareTools`** | tell Humanos which tools an agent can call, each as its server describes it, one call per service |
 | **`startViaMcpServer`** | expose a guarded agent's tools to an MCP host |
@@ -32,8 +33,8 @@ Neither package is on a registry yet. Install both from this repository, pinned 
 ```json
 {
   "dependencies": {
-    "@humanos/agent-sdk": "github:Humanos-App/agent-sdk#v0.2.1",
-    "@humanos/via-sdk-v03": "https://raw.githubusercontent.com/Humanos-App/agent-sdk/v0.2.1/vendor/humanos-via-sdk-v03-0.6.2.tgz"
+    "@humanos/agent-sdk": "github:Humanos-App/agent-sdk#v0.3.0",
+    "@humanos/via-sdk-v03": "https://raw.githubusercontent.com/Humanos-App/agent-sdk/v0.3.0/vendor/humanos-via-sdk-v03-0.6.2.tgz"
   }
 }
 ```
@@ -44,7 +45,7 @@ longer than a registry package. Requires Node.js 20 or later and `git`.
 ## Use
 
 ```ts
-import { createViaMcpClient, McpGuardVerifier, getMandates, ViaGuard, ViaDeniedError } from '@humanos/agent-sdk';
+import { createViaMcpClient, McpGuardVerifier, policyMandates, ViaGuard, ViaDeniedError } from '@humanos/agent-sdk';
 
 const client = createViaMcpClient({
   url: 'https://mcptest.humanos.tech/mcp', // Humanos staging
@@ -54,12 +55,11 @@ const client = createViaMcpClient({
 await client.initialize();
 
 // `agentKey` is the key the agent registered with; `did` is what registration returned.
-const [held] = await getMandates(client, did);
 const guard = new ViaGuard({
-  mandate: held.mandate,
-  compiled: held.compiled,
   agentKey,
+  agentDid: did,
   verifier: new McpGuardVerifier(client),
+  mandates: policyMandates(client, did),
 });
 
 try {
@@ -71,19 +71,50 @@ try {
 }
 ```
 
-### A call with no mandate
+### How a call is decided
 
-An organization's policy can let its agents call some tools with no person's mandate (v0.3 §21). A guard built
-without `mandate` verifies every call on it:
+The organization's policy decides first (v0.3 §21.3): a tool it allows runs, one it refuses is `policy_denied`, one
+under a control's rules runs within them, and one it leaves to a person's mandate needs one. A tool it sets nothing
+for gets its default, allowed or not. `agentDid` names the agent on every call.
+
+`policyMandates` reads `get_policy` and `get_mandate` once, and presents a held mandate only for a tool the policy
+leaves to one: one on the control the policy names first, else any covering the tool, a plain authorization
+included. Every other call binds the policy alone. A `mandate_required` deny reads both again, and the guard
+presents the call once more when a mandate now fits: a person has just granted one, or the policy changed. Nobody
+is asked to confirm a call: one a policy or a mandate puts behind a step-up is refused `stepup_required`.
+
+### When a tool needs a person's mandate
+
+A `mandate_required` deny says what to ask for in `ViaDeniedError.request`: a guardrail under one of `actionIds`, whose
+limits `getAction` describes, or, with no control for the tool, an authorization in plain words. Whom to ask and the
+limits' values come from your agent's own context:
 
 ```ts
-const guard = new ViaGuard({ agentKey, agentDid: did, verifier: new McpGuardVerifier(client) });
-await guard.call('kb_search', { q: 'refunds' }, kbSearch); // allowed, or ViaDeniedError: policy_denied | mandate_required
+import { getAction, requestMandate, waitForMandate, ViaDeniedError } from '@humanos/agent-sdk';
+
+try {
+  await guard.call('issue_refund', args, issueRefund);
+} catch (e) {
+  if (!(e instanceof ViaDeniedError) || e.reason !== 'mandate_required' || !e.request) throw e;
+  const req =
+    e.request.kind === 'guardrail'
+      ? await requestMandate(client, did, {
+          kind: 'guardrail',
+          actionId: e.request.actionIds[0]!,
+          userParams: limitsFor(await getAction(client, e.request.actionIds[0]!)), // yours: the values the person sets
+          contact,
+        })
+      : await requestMandate(client, did, { kind: 'authorization', name: 'Refund A-1', terms: 'Refund order A-1, €40', contact });
+  show(req.consentCard.link); // the person approves on their own device
+  if ((await waitForMandate(client, req)).phase === 'ACTIVE') await guard.call('issue_refund', args, issueRefund);
+}
 ```
 
-`mandate_required` means the policy leaves the tool to a person's mandate, or the organization has published no
-policy. `agentDid` names the agent when the credential is the organization's key; an agent key or a custodial
-agent's credential is its own.
+An authorization asks for one call, ending in an hour, unless `maxExecutions` and `validUntil` say otherwise: with no
+rules, it opens every tool the policy leaves to a mandate without naming a control. `waitForMandate` returns once the
+person decides (`ACTIVE`, `REJECTED`, `INACTIVE`), or still `PENDING` at the earlier of the consent link's expiry and
+ten minutes (`until` changes it; `signal` stops it). The call after an approval presents the new mandate on its own.
+`mandateStatus` asks once, for a builder that waits its own way.
 
 ## Govern MCP servers you did not write
 
@@ -105,8 +136,8 @@ await proxy.refresh('Slack');
 await declareTools(client, did, [], { emptyServices: ['Files'] });
 ```
 
-Per call, the proxy picks the mandate whose person's `allowed_tools`, or whose action's `tools`, names the tool; a
-call no mandate covers is verified on the organization's policy (`policy: false` refuses it without asking).
+Per call, the proxy presents a mandate only for a tool the organization's policy leaves to one: the one whose
+person's `allowed_tools`, or whose action's `tools`, names the tool. Every other call is decided on the policy alone.
 
 At start, and on each `refresh`, every tool is declared to Humanos as its server describes it:
 schemas, annotations and the server it comes from, never cut by the SDK (Humanos caps long text
@@ -128,9 +159,12 @@ const t = createTestVerifier({
   userParams: { limit: 100 },
   agentKey,
 });
-const guard = new ViaGuard({ mandate: t.mandate, compiled: t.compiled, agentKey, verifier: t.verifier });
+const guard = new ViaGuard({ mandate: t.mandate, compiled: t.compiled, agentKey, agentDid: 'did:web:agent.test', verifier: t.verifier });
 await guard.call('pay', { amount: 500 }, pay); // throws ViaDeniedError: rule_failed
 ```
+
+Give it a `policy` (`{ tools: { pay: 'mandate', search: 'allow' }, default: 'deny' }`) and it decides first, as the
+connector does: the mandate decides only the tools the policy leaves to one.
 
 ## Develop
 
