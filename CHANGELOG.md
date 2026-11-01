@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.1
+
+- The client names its own version in `clientInfo` again: 0.4.0 reported `0.3.0`.
+
 ## 0.4.0: the call proof
 
 Needs a Humanos platform whose verify takes `audience` (v0.3 §16.16). Bundles sdk-v03 0.8.0, which agents and the
