@@ -5,9 +5,10 @@ import { describe, expect, it } from 'vitest';
 import { softwareKey } from '../src/key-provider.js';
 import { evaluateRules, unwrapUserParamValues } from '../src/sdk.js';
 import type { ViaMcpClient } from '../src/mcp/client.js';
-import { declaredParams, pickMandate, startViaMcpProxy, type ViaMcpProxyConfig } from '../src/mcp/proxy.js';
+import { AGENT_RECORD_HEADER, AGENT_RECORD_META_KEY, CALL_PROOF_HEADER, CALL_PROOF_META_KEY } from '@humanos/via-sdk-v03';
+import { callProofExtra, declaredParams, pickMandate, startViaMcpProxy, type ViaMcpProxyConfig } from '../src/mcp/proxy.js';
 import type { JsonRpcMessage } from '../src/mcp/server.js';
-import { connectUpstream, inProcessUpstream, type UpstreamTool } from '../src/mcp/upstream.js';
+import { connectUpstream, inProcessUpstream, type Upstream, type UpstreamTool } from '../src/mcp/upstream.js';
 
 // ── stand-in upstream servers: real-shaped tools, every call journalled instead of performed ──
 function standin(service: string, tools: UpstreamTool[], fail: string[] = []) {
@@ -80,7 +81,14 @@ function humanos(held: StandinMandate[] = [SLACK_MANDATE, GMAIL_MANDATE], policy
   const reads = { get_policy: 0, get_mandate: 0 };
   let n = 0;
   const answer = (v: unknown) => ({ text: JSON.stringify(v), isError: false });
+  // v0.3 §16.16: like the platform, an allow for a call that names its receiver carries a call proof.
   const decide = (args: Record<string, unknown>) => {
+    const d = decided(args);
+    return d.decision === 'allow' && args.audience
+      ? { ...d, callProof: { decision: `decision-for-${String(args.audience)}`, record: `record-for-${String(args.audience)}` } }
+      : d;
+  };
+  const decided = (args: Record<string, unknown>): Record<string, unknown> => {
     const set = policy[String(args.tool)];
     const effect = set ?? byDefault;
     const lane = { evaluations: [], enforcement: 'policy', ...(set ? {} : { unset: true }) };
@@ -145,13 +153,15 @@ async function setup(
     policy?: StandinPolicy;
     default?: 'allow' | 'deny';
     held?: StandinMandate[];
+    /** Where the Slack server is reached, as a remote one would say. */
+    origin?: string;
   } = {},
 ) {
   const slack = standin('Slack', SLACK, opts.fail);
   const gmail = standin('Gmail', GMAIL);
   const h = humanos(opts.held, { ...DELEGATED, ...opts.policy }, opts.default);
   const proxy = await startViaMcpProxy({
-    upstreams: [await inProcessUpstream('Slack', slack.handleRpc), await inProcessUpstream('Gmail', gmail.handleRpc)],
+    upstreams: [await reachedAt(await inProcessUpstream('Slack', slack.handleRpc), opts.origin), await inProcessUpstream('Gmail', gmail.handleRpc)],
     humanos: h.client,
     agentKey: await softwareKey(),
     did: 'did:web:humanos.tech:agent:proxy',
@@ -255,10 +265,41 @@ describe('the governing proxy — ViaGuard in front of MCP servers', () => {
     expect(slack.journal).toHaveLength(1);
   });
 
-  it('without decorateCall the call carries no _meta', async () => {
+  it('without decorateCall, a call the verifier made no proof for carries no _meta', async () => {
     const { call, slack } = await setup();
     await call('slack_send_message', { channel_id: 'C-OK', message: 'hi' });
     expect(slack.metas).toEqual([undefined]);
+  });
+
+  it("names a remote server's https origin as the receiver, and carries the allow's call proof in _meta (v0.3 §16.16)", async () => {
+    const origin = 'https://mcp.slack.example';
+    const { call, slack, h } = await setup({ origin });
+    await call('slack_send_message', { channel_id: 'C-OK', message: 'hi' });
+    expect(h.verified[0]).toMatchObject({ audience: origin });
+    expect(slack.metas).toEqual([
+      { [CALL_PROOF_META_KEY]: `decision-for-${origin}`, [AGENT_RECORD_META_KEY]: `record-for-${origin}` },
+    ]);
+    // the arguments are the server's, untouched
+    expect(slack.journal).toEqual([{ tool: 'slack_send_message', args: { channel_id: 'C-OK', message: 'hi' } }]);
+  });
+
+  // @invariant
+  it.each([
+    ['an in-process server', undefined],
+    ['a plain http server', 'http://localhost:8080'],
+  ])('names no receiver for %s, so its calls carry no proof', async (_case, origin) => {
+    const { call, slack, h } = await setup(origin ? { origin } : {});
+    await call('slack_send_message', { channel_id: 'C-OK', message: 'hi' });
+    expect(h.verified[0]).not.toHaveProperty('audience');
+    expect(slack.metas).toEqual([undefined]);
+  });
+
+  it('callProofExtra: both tokens in _meta, and in the headers Streamable HTTP sends', () => {
+    expect(callProofExtra({ decision: 'allow', evaluations: [], callProof: { decision: 'd', record: 'r' } })).toEqual({
+      meta: { [CALL_PROOF_META_KEY]: 'd', [AGENT_RECORD_META_KEY]: 'r' },
+      headers: { [CALL_PROOF_HEADER]: 'd', [AGENT_RECORD_HEADER]: 'r' },
+    });
+    expect(callProofExtra({ decision: 'allow', evaluations: [] })).toBeUndefined();
   });
 
   it('an upstream error is the server\'s own answer, and reported as a failed outcome', async () => {
@@ -442,9 +483,10 @@ describe('upstream over Streamable HTTP', () => {
     });
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
     try {
-      const u = await connectUpstream({ service: 'H', url: `http://127.0.0.1:${(server.address() as AddressInfo).port}/mcp`, headers: { Authorization: 'Bearer upstream' } });
-      // the server by its host only: never the URL's path, query or the credential
-      expect(u.server).toEqual({ transport: 'http', host: '127.0.0.1', name: 'h', version: '0' });
+      const port = (server.address() as AddressInfo).port;
+      const u = await connectUpstream({ service: 'H', url: `http://127.0.0.1:${port}/mcp`, headers: { Authorization: 'Bearer upstream' } });
+      // the server by its host and origin only: never the URL's path, query or the credential
+      expect(u.server).toEqual({ transport: 'http', host: '127.0.0.1', origin: `http://127.0.0.1:${port}`, name: 'h', version: '0' });
       await u.callTool('echo', { text: 'hi' }, { meta: { 'test.example/decision': 'd-1' }, headers: { 'X-Decision': 'd-1', authorization: 'Bearer other', 'content-type': 'text/plain' } });
       await u.callTool('echo', { text: 'again' });
       expect(calls[0]!.headers).toMatchObject({ 'x-decision': 'd-1', authorization: 'Bearer upstream', 'content-type': 'application/json' });
@@ -457,3 +499,8 @@ describe('upstream over Streamable HTTP', () => {
     }
   });
 });
+
+/** An upstream as a remote server reached at `origin` would be. */
+async function reachedAt(upstream: Upstream, origin?: string): Promise<Upstream> {
+  return origin ? { ...upstream, server: { ...upstream.server, transport: 'http', origin } } : upstream;
+}

@@ -33,8 +33,8 @@ Neither package is on a registry yet. Install both from this repository, pinned 
 ```json
 {
   "dependencies": {
-    "@humanos/agent-sdk": "github:Humanos-App/agent-sdk#v0.3.0",
-    "@humanos/via-sdk-v03": "https://raw.githubusercontent.com/Humanos-App/agent-sdk/v0.3.0/vendor/humanos-via-sdk-v03-0.6.2.tgz"
+    "@humanos/agent-sdk": "github:Humanos-App/agent-sdk#v0.4.0",
+    "@humanos/via-sdk-v03": "https://raw.githubusercontent.com/Humanos-App/agent-sdk/v0.4.0/vendor/humanos-via-sdk-v03-0.8.0.tgz"
   }
 }
 ```
@@ -138,6 +138,13 @@ await declareTools(client, did, [], { emptyServices: ['Files'] });
 
 Per call, the proxy presents a mandate only for a tool the organization's policy leaves to one: the one whose
 person's `allowed_tools`, or whose action's `tools`, names the tool. Every other call is decided on the policy alone.
+
+A call to a remote server reached over `https` names that server's origin as the receiver, and an `allow` then
+carries the call proof (v0.3 §16.16): the decision token and the agent's record token, both signed by Humanos. The
+proxy sends them with the call, unchanged: in `_meta` (`tech.humanos/call-proof`, `tech.humanos/agent-record`) and in
+the `Humanos-Call-Proof` and `Humanos-Agent-Record` headers. The server checks them offline with the protocol SDK's
+`verifyCallProof`. A local or plain-`http` server is named no receiver and gets no proof. With `decorateCall`, what
+the call carries is yours; `callProofExtra(outcome)` gives the proof's part.
 
 At start, and on each `refresh`, every tool is declared to Humanos as its server describes it:
 schemas, annotations and the server it comes from, never cut by the SDK (Humanos caps long text
