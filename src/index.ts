@@ -45,7 +45,7 @@ export { createStdioTransport } from './mcp/stdio.js';
 
 // The governing proxy — ViaGuard in front of MCP servers you did not write (Slack's, Gmail's, …):
 // the servers' tools merged, declared to Humanos by service, every call verified before it reaches them.
-export { startViaMcpProxy, pickMandate, declaredParams } from './mcp/proxy.js';
+export { startViaMcpProxy, pickMandate, declaredParams, callProofExtra } from './mcp/proxy.js';
 export type { ViaMcpProxyConfig, ViaMcpProxy, ProxiedTool } from './mcp/proxy.js';
 export { connectUpstream, inProcessUpstream } from './mcp/upstream.js';
 export type { Upstream, UpstreamSpec, UpstreamServer, UpstreamTool, UpstreamResult, UpstreamCallExtra } from './mcp/upstream.js';

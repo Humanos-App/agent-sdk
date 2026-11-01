@@ -157,7 +157,16 @@ export class ViaGuard {
   }
 
   /** Guard one tool call. Unmanifested tools are still presented (R6) — drift is spec-native denials. */
-  async call<T = unknown>(tool: string, args: Record<string, unknown>, impl: ToolFn): Promise<GuardCallOutcome<T>> {
+  /**
+   * `opts.audience` — the party the call goes to (v0.3 §16.16): with it, an `allow` carries the call proof, which
+   * `impl` finds on `ctx.outcome.callProof` and sends with the call.
+   */
+  async call<T = unknown>(
+    tool: string,
+    args: Record<string, unknown>,
+    impl: ToolFn,
+    opts: { audience?: string } = {},
+  ): Promise<GuardCallOutcome<T>> {
     const params = { ...args, tool };
     let presented = await this.mandateFor(tool, params);
 
@@ -171,7 +180,7 @@ export class ViaGuard {
       void preflight; // advisory: a real SDK would log/telemetry this; the decision stays with the verifier.
     }
 
-    let outcome = await this.present(tool, params, presented?.mandate.id);
+    let outcome = await this.present(tool, params, presented?.mandate.id, opts.audience);
     // The policy may have changed since the source read it, or a person may just have granted a mandate: the source
     // reads again, and the call is presented once more when that changes the mandate it presents.
     if (outcome.decision === 'deny' && outcome.reason === 'mandate_required' && this.opts.mandates) {
@@ -181,7 +190,7 @@ export class ViaGuard {
       );
       if (again && again.mandate.id !== presented?.mandate.id) {
         presented = again;
-        outcome = await this.present(tool, params, again.mandate.id);
+        outcome = await this.present(tool, params, again.mandate.id, opts.audience);
       }
     }
 
@@ -274,14 +283,14 @@ export class ViaGuard {
    * or, with none, the policy the challenge names, and verify. A verifier that names no policy authorizes nothing
    * without a mandate (v0.3 §21.4).
    */
-  private async present(tool: string, params: Record<string, unknown>, mandateId?: string): Promise<VerifyOutcome> {
+  private async present(tool: string, params: Record<string, unknown>, mandateId?: string, audience?: string): Promise<VerifyOutcome> {
     const { verifier, agentDid } = this.opts;
     const ch = await verifier.challenge({ agentDid, ...(mandateId ? { mandateId } : {}) });
     if ('refused' in ch) return { decision: 'deny', reason: ch.refused, evaluations: [] };
     const authority = this.authority(ch, mandateId);
     if (!authority) return { decision: 'deny', reason: 'mandate_required', evaluations: [] };
     const pop = await this.sign(ch, this.hash(authority, tool, params));
-    return verifier.verify({ ...authority, tool, params, pop, now: this.opts.now?.() });
+    return verifier.verify({ ...authority, tool, params, pop, ...(audience ? { audience } : {}), now: this.opts.now?.() });
   }
 
   /** What the PoP binds: the mandate presented or, with none, the policy the challenge named. */

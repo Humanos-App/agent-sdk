@@ -29,6 +29,11 @@ export interface VerifyOutcome {
   /** v0.3 §21.3 — no entry of the policy applied to the tool: its `default` decided. */
   unset?: true;
   /**
+   * v0.3 §16.16 — with an `allow` for an `audience`: the decision token and the agent's record token, both the
+   * platform's, carried unchanged on the call they cover.
+   */
+  callProof?: { decision: string; record: string };
+  /**
    * v0.3 §21.3 — with `mandate_required`: the actions the organization's policy needs the mandate to be under, any one
    * of them. Ask the person for a mandate under one.
    */
@@ -86,6 +91,8 @@ export interface VerifyInput extends CallAuthority {
   /** Full executionParams INCLUDING the `tool` discriminator — must equal the PoP-hashed params. */
   params: Record<string, unknown>;
   pop: string;
+  /** v0.3 §16.16 — the party the call goes to, a DID or an `https` origin: an `allow` then carries the call proof. */
+  audience?: string;
   now?: Date;
 }
 

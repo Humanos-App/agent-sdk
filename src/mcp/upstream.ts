@@ -40,6 +40,8 @@ export interface UpstreamServer {
   transport?: 'stdio' | 'http';
   /** A remote server's host (`mcp.slack.com`), or a local server's command name (`npx`). */
   host?: string;
+  /** A remote server's origin (`https://mcp.slack.com`), never its path: the party a call proof is for (v0.3 §16.16). */
+  origin?: string;
 }
 
 export interface UpstreamResult {
@@ -89,7 +91,7 @@ const CLIENT_INFO = { name: 'via-proxy', version: '0.1.0' };
 /** `headers` are per request and only an HTTP transport has anywhere to put them. */
 type Send = (msg: JsonRpcMessage, headers?: Record<string, string>) => Promise<JsonRpcMessage | null>;
 
-function session(service: string, reached: Pick<UpstreamServer, 'transport' | 'host'>, send: Send, notify: (msg: JsonRpcMessage) => Promise<void>, close: () => Promise<void>): Upstream & { init(): Promise<void> } {
+function session(service: string, reached: Pick<UpstreamServer, 'transport' | 'host' | 'origin'>, send: Send, notify: (msg: JsonRpcMessage) => Promise<void>, close: () => Promise<void>): Upstream & { init(): Promise<void> } {
   let seq = 0;
   const server: UpstreamServer = { ...reached };
   const rpc = async (method: string, params?: Record<string, unknown>, headers?: Record<string, string>): Promise<Record<string, unknown>> => {
@@ -241,7 +243,7 @@ async function httpUpstream(spec: UpstreamSpec): Promise<Upstream> {
     }
     return JSON.parse(text) as JsonRpcMessage;
   };
-  const s = session(spec.service, { transport: 'http', host: new URL(spec.url!).hostname }, post, async (m) => { await post(m); }, async () => {});
+  const s = session(spec.service, { transport: 'http', host: new URL(spec.url!).hostname, origin: new URL(spec.url!).origin }, post, async (m) => { await post(m); }, async () => {});
   await s.init();
   return s;
 }

@@ -22,6 +22,7 @@
  */
 import { ViaDeniedError, ViaGuard } from '../guard.js';
 import type { ViaAgentKey } from '../key-provider.js';
+import { AGENT_RECORD_HEADER, AGENT_RECORD_META_KEY, CALL_PROOF_HEADER, CALL_PROOF_META_KEY } from '@humanos/via-sdk-v03';
 import type { MandateRequestHint, VerifyOutcome } from '../types.js';
 import type { ViaMcpClient } from './client.js';
 import { declareTools, type DeclaredTool, type ServiceDeclaration } from './declare.js';
@@ -60,9 +61,9 @@ export interface ViaMcpProxyConfig {
   mandateFor?: (tool: ProxiedTool, held: GuardMandate[], preferred: string[]) => GuardMandate | undefined;
   /**
    * What to add to the upstream call now that a decision exists — `_meta`, and headers over HTTP.
-   * The seam for carrying the verifier's decision to the server that executes the call; what goes
-   * there is the caller's, the proxy defines none of it. Runs only for a call about to reach the
-   * upstream, so `outcome.decision` is `allow`, or `deny` under `observe`.
+   * Without it, the call carries the call proof when the verifier made one ({@link callProofExtra}); with it, what
+   * goes there is the caller's. Runs only for a call about to reach the upstream, so `outcome.decision` is `allow`,
+   * or `deny` under `observe`.
    */
   decorateCall?: (ctx: {
     tool: ProxiedTool;
@@ -241,14 +242,19 @@ export async function startViaMcpProxy(cfg: ViaMcpProxyConfig): Promise<ViaMcpPr
     const tool = byName.get(name);
     if (!tool) return text(`Unknown tool ${name}.`, true);
     try {
-      const out = await guard.call<UpstreamResult>(tool.upstreamName, args, async (a, ctx) => {
-        const extra = cfg.decorateCall
-          ? await cfg.decorateCall({ tool, args: a, ...(ctx.mandateId ? { mandateId: ctx.mandateId } : {}), outcome: ctx.outcome })
-          : undefined;
-        const r = await tool.upstream.callTool(tool.upstreamName, a, extra);
-        if (r.isError) throw new UpstreamToolError(r); // reported as ACTION_FAILED, then surfaced as the server said it
-        return r;
-      });
+      const out = await guard.call<UpstreamResult>(
+        tool.upstreamName,
+        args,
+        async (a, ctx) => {
+          const extra = cfg.decorateCall
+            ? await cfg.decorateCall({ tool, args: a, ...(ctx.mandateId ? { mandateId: ctx.mandateId } : {}), outcome: ctx.outcome })
+            : callProofExtra(ctx.outcome);
+          const r = await tool.upstream.callTool(tool.upstreamName, a, extra);
+          if (r.isError) throw new UpstreamToolError(r); // reported as ACTION_FAILED, then surfaced as the server said it
+          return r;
+        },
+        audienceOf(tool.upstream),
+      );
       const r = out.result;
       if (!r) return text('', false);
       return { content: r.content, ...(r.structuredContent !== undefined ? { structuredContent: r.structuredContent } : {}) };
@@ -320,4 +326,23 @@ export async function startViaMcpProxy(cfg: ViaMcpProxyConfig): Promise<ViaMcpPr
       await Promise.all(upstreams.map((u) => u.close()));
     },
   };
+}
+
+/**
+ * v0.3 §16.16 — the call proof on the call it covers: both tokens in `_meta`, which reaches every transport, and in
+ * the headers, which only Streamable HTTP sends. Nothing when the verifier made none.
+ */
+export function callProofExtra(outcome: VerifyOutcome): UpstreamCallExtra | undefined {
+  const proof = outcome.callProof;
+  if (!proof) return undefined;
+  return {
+    meta: { [CALL_PROOF_META_KEY]: proof.decision, [AGENT_RECORD_META_KEY]: proof.record },
+    headers: { [CALL_PROOF_HEADER]: proof.decision, [AGENT_RECORD_HEADER]: proof.record },
+  };
+}
+
+/** The party a call to `upstream` goes to: a remote server's `https` origin; none for a local or in-process one. */
+function audienceOf(upstream: Upstream): { audience?: string } {
+  const origin = upstream.server?.origin;
+  return origin?.startsWith('https://') ? { audience: origin } : {};
 }

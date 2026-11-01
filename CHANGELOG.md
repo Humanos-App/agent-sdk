@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0: the call proof
+
+Needs a Humanos platform whose verify takes `audience` (v0.3 §16.16). Bundles sdk-v03 0.8.0, which agents and the
+servers they call share as a peer (`^0.8.0`).
+
+**New**
+
+- The proxy names a remote `https` server's origin as each call's receiver, and sends the call proof an `allow`
+  carries with the call: both tokens in `_meta` and in the `Humanos-Call-Proof` / `Humanos-Agent-Record` headers.
+  `callProofExtra(outcome)` builds that part for a `decorateCall` of your own.
+- `ViaGuard.call` takes `{ audience }`; `VerifyInput.audience` and `VerifyOutcome.callProof`. An upstream reached
+  over HTTP records its `origin`.
+
 ## 0.3.0: the policy first
 
 Needs a Humanos platform whose verify decides on the organization's policy first and names the agent on every call;
