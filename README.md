@@ -21,6 +21,7 @@ For complete, runnable agents built on it, see
 | **`McpGuardVerifier`**, **`policyMandates`** | the connector as the guard's verifier, and the mandate each call presents, from the policy (`getPolicy`) and the mandates held (`getMandates`) |
 | **`requestMandate`**, **`waitForMandate`** | ask a person for a mandate a tool needs, under a control `getAction` describes or as a one-call authorization, and wait for their answer (`mandateStatus`) |
 | **`startViaMcpProxy`** | a governing proxy in front of MCP servers you did not write; `refresh()` declares their new tools |
+| **`registerAgent`** | register the agent's key with the organization; Humanos grades how it is held and answers the agent's DID |
 | **`declareTools`** | tell Humanos which tools an agent can call, each as its server describes it, one call per service |
 | **`startViaMcpServer`** | expose a guarded agent's tools to an MCP host |
 | **`extractFromToolsList`**, **`importActionDraft`** | turn an existing tool surface into a draft action for the organization |
@@ -33,8 +34,8 @@ Neither package is on a registry yet. Install both from this repository, pinned 
 ```json
 {
   "dependencies": {
-    "@humanos/agent-sdk": "github:Humanos-App/agent-sdk#v0.4.1",
-    "@humanos/via-sdk-v03": "https://raw.githubusercontent.com/Humanos-App/agent-sdk/v0.4.1/vendor/humanos-via-sdk-v03-0.8.0.tgz"
+    "@humanos/agent-sdk": "github:Humanos-App/agent-sdk#v0.5.0",
+    "@humanos/via-sdk-v03": "https://raw.githubusercontent.com/Humanos-App/agent-sdk/v0.5.0/vendor/humanos-via-sdk-v03-0.8.0.tgz"
   }
 }
 ```
@@ -45,7 +46,7 @@ longer than a registry package. Requires Node.js 20 or later and `git`.
 ## Use
 
 ```ts
-import { createViaMcpClient, McpGuardVerifier, policyMandates, ViaGuard, ViaDeniedError } from '@humanos/agent-sdk';
+import { createViaMcpClient, McpGuardVerifier, policyMandates, registerAgent, softwareKey, ViaGuard, ViaDeniedError } from '@humanos/agent-sdk';
 
 const client = createViaMcpClient({
   url: 'https://mcptest.humanos.tech/mcp', // Humanos staging
@@ -54,7 +55,10 @@ const client = createViaMcpClient({
 });
 await client.initialize();
 
-// `agentKey` is the key the agent registered with; `did` is what registration returned.
+// The key is the agent: keep it. Registering the same key again answers the same DID.
+const agentKey = await softwareKey();
+const { did } = await registerAgent(client, agentKey);
+
 const guard = new ViaGuard({
   agentKey,
   agentDid: did,

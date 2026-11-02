@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.0
+
+- `registerAgent(client, key)`: the connector's `register_challenge` and `register`, the key's evidence bound to the
+  nonce; answers the agent's DID, the rung Humanos granted, and `existing` for a key already registered.
+
 ## 0.4.1
 
 - The client names its own version in `clientInfo` again: 0.4.0 reported `0.3.0`.

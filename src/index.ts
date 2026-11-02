@@ -55,6 +55,10 @@ export type { Upstream, UpstreamSpec, UpstreamServer, UpstreamTool, UpstreamResu
 export { declareTools, DECLARE_TOOLS_MAX } from './mcp/declare.js';
 export type { DeclaredTool, DeclareToolsOptions, ServiceDeclaration } from './mcp/declare.js';
 
+// Registering — the agent's key, graded by how it is held, and the DID every call after names.
+export { registerAgent } from './mcp/register.js';
+export type { RegisteredAgent } from './mcp/register.js';
+
 // EXTRACTION — parse an already-built agent's tool surface into a VIAAction draft. Params and
 // descriptions are derived; `rules`/`userParams` are ALWAYS empty (R8), because constraints are
 // policy and are never guessed.
