@@ -237,8 +237,7 @@ organization whose policy is set by hand. It needs `HUMANOS_LIVE_API_KEY`, `HUMA
 `ANTHROPIC_API_KEY` (in the environment or `test/.env`), skips without them, and runs only by hand:
 `npm run test:live`, or the `live` workflow.
 
-`npm ci` also builds `dist/` (`prepare`). Until `@humanos-ai/via-sdk` is on npm, development installs it from
-`vendor/`; once it is, the devDependency is the registry's and `vendor/` goes.
+`npm ci` also builds `dist/` (`prepare`).
 
 To release: give the CHANGELOG's Unreleased section its version, then publish a GitHub Release from `main` with the tag
 `v<version>`. The `release` workflow runs the whole CI, sets the version from the tag on its runner (the build writes it
