@@ -22,14 +22,14 @@ describe('the live tier’s preflight', () => {
     const failed = await preflight(live).then(() => '', (e: Error) => e.message);
     expect(failed).toContain('Agents, then Policy, under "Support desk (live test)"');
     expect(failed).toContain('issue_refund: Deny (now not declared)');
-    expect(failed).toContain('approve_discount: Delegate (now not declared)');
+    expect(failed).toContain('approve_discount: Restrict (a control: percent under 10) (now not declared)');
     expect(failed).not.toContain('lookup_order:');
     expect(scene.humanos.declared.at(-1)?.tools.map((t) => t.name)).toEqual(['lookup_order', 'issue_refund', 'approve_discount']);
     await scene.close();
   });
 
   it('with the policy set: passes, and the agent’s calls are read back from the connector', async () => {
-    const scene = await agentScene({ lookup_order: 'allow', issue_refund: 'deny', approve_discount: 'mandate' });
+    const scene = await agentScene({ lookup_order: 'allow', issue_refund: 'deny' }, { reported: { approve_discount: 'rules' } });
     const live = await liveAgent(configFor(scene.env));
     await preflight(live);
     live.reset();

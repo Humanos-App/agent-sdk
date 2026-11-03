@@ -34,7 +34,8 @@ export interface AgentScene {
   close(): Promise<void>;
 }
 
-export async function agentScene(policy: Record<string, TestAccess>, options: { callProof?: boolean } = {}): Promise<AgentScene> {
+/** `reported`: what `get_policy` says of a tool when it is not what the verifier decides by (a Restrict control the test verifier has no form of). */
+export async function agentScene(policy: Record<string, TestAccess>, options: { callProof?: boolean; reported?: Record<string, string> } = {}): Promise<AgentScene> {
   const dir = mkdtempSync(join(tmpdir(), 'agent-project-'));
   const home = join(dir, '.humanos');
   mkdirSync(home, { mode: 0o700 });
@@ -42,7 +43,7 @@ export async function agentScene(policy: Record<string, TestAccess>, options: { 
   key.save(AGENT_DID);
 
   const t = createTestVerifier({ rules: [], userParams: {}, agentKey: key, policy: { tools: policy } });
-  const humanos = fakeConnector(options.callProof ? withCallProof(t.verifier) : t.verifier, AGENT_DID, policy);
+  const humanos = fakeConnector(options.callProof ? withCallProof(t.verifier) : t.verifier, AGENT_DID, { ...policy, ...options.reported });
   const served = await serveConnector(humanos, CREDENTIALS);
   const env = {
     HUMANOS_API_KEY: CREDENTIALS.apiKey,

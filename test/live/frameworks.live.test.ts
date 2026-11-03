@@ -1,6 +1,6 @@
 /**
  * Each wave 1 framework against a real platform (dev, or a local stack): an allowed call runs and its outcome is
- * recorded, a denied one never runs, a Delegate one is refused for want of a mandate. The model is a real one with
+ * recorded, a denied one never runs, a Restrict one runs within its control's limit and is refused over it. The model is a real one with
  * `ANTHROPIC_API_KEY`, else the scripted one. Skipped, saying why, without its variables (`test/live/live.ts`).
  */
 import { mkdtempSync } from 'node:fs';
@@ -73,9 +73,17 @@ describe.skipIf(!cfg)('live: a real platform', () => {
         expect(ran).not.toContain('issue_refund');
       });
 
-      it('Delegate: refused while no person has granted a mandate', async () => {
-        const { ran, verdict } = await ask(driver, 'approve_discount', { order_id: 'A-1', percent: 10 });
-        expect(verdict).toMatchObject({ tool: 'approve_discount', decision: 'deny', reason: 'mandate_required' });
+      it('Restrict, within the limit (5%): the call runs, and its outcome is recorded', async () => {
+        const { ran, verdict, recorded } = await ask(driver, 'approve_discount', { order_id: 'A-1', percent: 5 });
+        expect(verdict).toEqual({ tool: 'approve_discount', decision: 'allow' });
+        expect(ran).toContain('approve_discount');
+        expect(recorded.length).toBeGreaterThan(0);
+      });
+
+      it('Restrict, over the limit (15%): the call never runs', async () => {
+        const { ran, verdict } = await ask(driver, 'approve_discount', { order_id: 'A-1', percent: 15 });
+        // A Restrict control's broken rule is the policy refusing the call (`rule_failed` is a mandate's rule).
+        expect(verdict).toMatchObject({ tool: 'approve_discount', decision: 'deny', reason: 'policy_denied' });
         expect(ran).not.toContain('approve_discount');
       });
     });

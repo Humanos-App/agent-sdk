@@ -51,9 +51,10 @@
 - `via().mcp.route(spec, via?)` remembers the service it routed, and `checks` answers true for its tools.
 - `via({ cwd })`: the project `.env` and `.humanos` are read from.
 - The live tier (`npm run test:live`, the by-hand `live` workflow): the framework drivers on a real model against
-  the dev platform. Its preflight declares the live tools and, until the test organization's policy gives them
-  Allow, Deny and Delegate, fails naming what to set in the dashboard. Each framework: an allowed call runs and its
-  outcome is recorded, a denied one never runs, a Delegate one is refused `mandate_required`.
+  a real platform (dev, or a local stack with `HUMANOS_LIVE_MCP_URL`). Its preflight declares the live tools and,
+  until the test organization's policy gives them Allow, Deny and Restrict (a control keeping `percent` under 10),
+  fails naming what to set in the dashboard. Each framework: an allowed call runs and its outcome is recorded, a
+  denied one never runs, a restricted one runs within the limit and is refused `policy_denied` over it.
 - Cloudflare Agents tested in the Workers runtime: an `Agent` (a Durable Object) run by workerd through wrangler, its
   tools through the AI SDK adapter. agent-sdk runs under `nodejs_compat`; a Worker has no disk, so the agent's key
   comes from a secret (`HUMANOS_AGENT_KEY`) handed to `via({ env })` with the connector's credentials.
