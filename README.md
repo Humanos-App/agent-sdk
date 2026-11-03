@@ -28,6 +28,7 @@ For complete, runnable agents built on it, see
 | **`@humanos/agent-sdk/ai-sdk`** — `aiSdk()` | Vercel AI SDK 5 and later (so Cloudflare Agents and OpenRouter as a provider): `guard(tools, service)` gives the `ToolSet` back with each `execute` verified first, and declares the tools with their JSON Schema |
 | **`@humanos/agent-sdk/claude-agent-sdk`** — `claudeAgentSdk()` | Claude Agent SDK: `gate()` gives the `PreToolUse` / `PostToolUse` hooks that check and settle every call, built-in tools included; `sdkServer` declares an in-process server's tools; `mcpServers` routes stdio servers behind the proxy. With no code, `humanos-agent hook claude` runs the same hooks from `.claude/settings.json` |
 | **`@humanos/agent-sdk/langchain`** — `langchain()` | LangChain 1.x and LangGraph: `gate()` is `createAgent` middleware that checks every tool call and declares the agent's tools; `guard(tools, service)` for a graph's own `ToolNode`; `mcp.servers` / `mcp.tools` for `MultiServerMCPClient` |
+| **`humanos-agent`** (bin) | `init` (the framework, `.env`, registering, declaring `.mcp.json`, the interception; for Claude Agent SDK the hooks in `.claude/settings.json`, for the others the lines to add), `register`, `declare`, `status`, `restore` (every file `init` changed put back), and what hosts run: `hook claude`, `proxy` |
 | **`ToolRegistry`** | every tool a process hands its adapters, declared as one list per service, again only when a service's list changes |
 | **`startViaMcpServer`** | expose a guarded agent's tools to an MCP host |
 | **`extractFromToolsList`**, **`importActionDraft`** | turn an existing tool surface into a draft action for the organization |
@@ -199,7 +200,8 @@ npm run build     # dist/: ES modules + type declarations
 The framework tests run each adapter inside its real framework: the framework's own agent loop and Anthropic
 provider against a scripted model server, a fake Humanos connector deciding on a test policy, and real MCP servers
 (stdio and HTTP). Every framework passes the same contract (`test/frameworks/contract.ts`). Their frameworks are
-installed apart, so `npm test` needs none of them:
+devDependencies, except Claude Agent SDK, whose engine is a native binary: it installs apart, so `npm ci` stays
+light:
 
 ```
 (cd test/frameworks && npm ci)
