@@ -23,9 +23,16 @@ export interface LocalTool {
   execute(args: Record<string, unknown>): Promise<unknown>;
 }
 
+/** The model the framework's Anthropic provider calls: the scripted one here, a real one in the live tier. */
+export interface Llm {
+  /** The API's base URL, without `/v1` (`ANTHROPIC_BASE_URL`). */
+  baseURL: string;
+  apiKey: string;
+  model: string;
+}
+
 export interface RunContext {
-  /** The scripted model: its base URL for the framework's Anthropic provider. */
-  model: ModelServer;
+  llm: Llm;
   via: Via;
   /** The service the local tools are declared under. */
   service: string;
@@ -117,7 +124,7 @@ async function play(driver: FrameworkDriver, scenario: {
     scenario.before?.(scene);
     let error: unknown;
     await driver.run({
-      model,
+      llm: scriptedLlm(model),
       via: scene.via,
       service: SERVICE,
       tools: local.tools,
@@ -141,6 +148,9 @@ async function play(driver: FrameworkDriver, scenario: {
     await scenario.http?.close();
   }
 }
+
+/** The scripted model as a provider sees it: a test key, and a model name it ignores. */
+export const scriptedLlm = (model: ModelServer): Llm => ({ baseURL: model.url, apiKey: 'sk-ant-local-test', model: 'claude-test' });
 
 const call = (name: string, input: Record<string, unknown>) => ({ name, input });
 const LOOKUP = call('lookup_order', { order_id: 'A-1' });

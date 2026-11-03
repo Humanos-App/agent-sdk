@@ -20,7 +20,8 @@ export interface FakeConnector {
   down: boolean;
 }
 
-export function fakeConnector(verifier: GuardVerifier, did: string): FakeConnector {
+/** `policy`: each tool's access, as `get_policy` reports it (the verifier decides by its own copy). */
+export function fakeConnector(verifier: GuardVerifier, did: string, policy: Record<string, string> = {}): FakeConnector {
   const declared: FakeConnector['declared'] = [];
   const json = (v: unknown) => ({ text: JSON.stringify(v), isError: false });
   const fake: FakeConnector = {
@@ -35,7 +36,7 @@ export function fakeConnector(verifier: GuardVerifier, did: string): FakeConnect
           case 'challenge': return json(await verifier.challenge(args as never));
           case 'verify': return json(await verifier.verify(args as never));
           case 'report_outcome': return json(await verifier.reportOutcome(args as never));
-          case 'get_policy': return json({ agent: did, tools: [] });
+          case 'get_policy': return json({ agent: did, tools: Object.entries(policy).map(([tool, access]) => ({ tool, access, meaning: access })) });
           case 'get_mandate': return json([]);
           case 'register_challenge': return json({ regNonce: 'reg-nonce', aud: 'did:web:humanos.tech' });
           case 'register': return json({ did, keyId: `${did}#key-1`, granted: { assurance: 'pop', binding: 'self' }, existing: false });
