@@ -50,10 +50,10 @@ export interface McpConnectionOptions {
 export interface ViaMcp {
   /** `inner`, with each `tools/list` declared under `service` and each `tools/call` checked before it is sent. */
   transport<T extends McpTransportLike>(service: string, inner: T, options?: McpConnectionOptions): T;
-  /** True when a wrapped connection checks this tool's calls: a framework hook leaves those to it. */
+  /** True when a wrapped connection, or the proxy a routed entry runs, checks this tool's calls: a framework hook leaves those to it. */
   checks(service: string, tool: string): boolean;
-  /** A stdio server entry rewritten to run behind the governing proxy; a remote one as it is. */
-  route(spec: McpServerSpec): McpServerSpec;
+  /** A stdio server entry rewritten to run behind the governing proxy (its service's calls then checked there); a remote one as it is. */
+  route(spec: McpServerSpec, via?: { command: string; args: readonly string[] }): McpServerSpec;
 }
 
 export interface ViaMcpDeps {
@@ -75,6 +75,7 @@ export function runChecked<T>(fn: () => T): T {
 
 export function createViaMcp(deps: ViaMcpDeps): ViaMcp {
   const served = new Map<string, Set<string>>();
+  const routed = new Set<string>();
   return {
     transport: (service, inner, options = {}) =>
       governTransport(deps, service, inner, options, (name) => {
@@ -82,8 +83,12 @@ export function createViaMcp(deps: ViaMcpDeps): ViaMcp {
         names.add(name);
         served.set(service, names);
       }),
-    checks: (service, tool) => served.get(service)?.has(tool) ?? false,
-    route: (spec) => routeStdio(spec),
+    checks: (service, tool) => routed.has(service) || (served.get(service)?.has(tool) ?? false),
+    route: (spec, via) => {
+      const out = routeStdio(spec, via);
+      if (out.command !== undefined && out !== spec) routed.add(spec.service);
+      return out;
+    },
   };
 }
 

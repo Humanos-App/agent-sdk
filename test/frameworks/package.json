@@ -2,8 +2,8 @@
   "name": "@humanos/agent-sdk-framework-tests",
   "private": true,
   "type": "module",
-  "description": "The frameworks the adapters are tested against, apart from the package's own dependencies: `npm ci` here before `npm run test:frameworks` at the root. CI installs each framework's lowest and latest supported version over these.",
+  "description": "Frameworks too heavy for the package's own devDependencies (Claude Agent SDK ships its engine as a native binary): `npm ci` here before `npm run test:frameworks` at the root. Peers resolve from the root (.npmrc), so there is one copy of each.",
   "devDependencies": {
-    "@anthropic-ai/sdk": "1.4.0"
+    "@anthropic-ai/claude-agent-sdk": "0.3.317"
   }
 }

@@ -22,9 +22,11 @@ import { createViaMcp, type ViaMcp } from './mcp/transport.js';
 export const HUMANOS_MCP_URL = 'https://mcp.humanos.tech/mcp';
 
 export interface ViaOptions {
-  /** The variables to read. Default: the process environment over the working directory's `.env`. */
+  /** The agent's project: where `.env` and `.humanos` are. Default: the working directory. */
+  cwd?: string;
+  /** The variables to read. Default: the process environment over the project's `.env`. */
   env?: Record<string, string | undefined>;
-  /** Where the agent's key file lives. Default: `HUMANOS_DIR`, else `.humanos` in the working directory. */
+  /** Where the agent's key file lives. Default: `HUMANOS_DIR`, else `.humanos` in the project. */
   dir?: string;
   /** The agent's key, when it is kept elsewhere (a KMS, an enclave). Default: `HUMANOS_AGENT_KEY`, else the key file. */
   key?: ViaAgentKey;
@@ -64,9 +66,10 @@ export function via(options?: ViaOptions): Promise<Via> {
 }
 
 async function build(options: ViaOptions): Promise<Via> {
-  const env = options.env ?? environment();
+  const cwd = options.cwd ?? process.cwd();
+  const env = options.env ?? environment(cwd);
   const client = options.client ?? (await connect(env));
-  const key = options.key ?? (await agentKey(env, options.dir));
+  const key = options.key ?? (await agentKey(env, cwd, options.dir));
   const did = await didOf(client, key);
   const guard = new ViaGuard({
     agentKey: key,
@@ -81,8 +84,8 @@ async function build(options: ViaOptions): Promise<Via> {
 }
 
 /** The process environment over `.env`. `util.parseEnv` is Node 20.12 and later; before it, only the environment. */
-function environment(): Record<string, string | undefined> {
-  const file = resolve('.env');
+export function environment(cwd: string = process.cwd()): Record<string, string | undefined> {
+  const file = resolve(cwd, '.env');
   const parseEnv = (util as { parseEnv?: (content: string) => Record<string, string> }).parseEnv;
   const fromFile = parseEnv && existsSync(file) ? parseEnv(readFileSync(file, 'utf8')) : {};
   return { ...fromFile, ...process.env };
@@ -98,11 +101,16 @@ async function connect(env: Record<string, string | undefined>): Promise<ViaMcpC
   return client;
 }
 
-async function agentKey(env: Record<string, string | undefined>, dir?: string): Promise<ViaAgentKey> {
+async function agentKey(env: Record<string, string | undefined>, cwd: string, dir?: string): Promise<ViaAgentKey> {
   if (env.HUMANOS_AGENT_KEY) return softwareKeyFromJson(env.HUMANOS_AGENT_KEY);
-  const home = resolve(dir ?? (env.HUMANOS_DIR || '.humanos'));
+  const home = agentDir(env, cwd, dir);
   mkdirSync(home, { recursive: true, mode: 0o700 });
   return storedSoftwareKey(join(home, 'agent-key.json'));
+}
+
+/** Where the agent's key file lives: `dir`, else `HUMANOS_DIR`, else `.humanos` in the project. */
+export function agentDir(env: Record<string, string | undefined>, cwd: string = process.cwd(), dir?: string): string {
+  return resolve(cwd, dir ?? (env.HUMANOS_DIR || '.humanos'));
 }
 
 /** The DID kept with the key, else the one registering it gives: the same key always answers the same DID. */
