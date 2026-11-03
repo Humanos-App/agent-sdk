@@ -83,8 +83,8 @@ export async function declareTools(humanos: ViaMcpClient, did: string, tools: De
   return declarations;
 }
 
-/** A tool on the wire: its own fields as given, and only the ones it has. */
-function wireTool(t: DeclaredTool): Record<string, unknown> {
+/** A tool on the wire: its own fields as given, and only the ones it has. `register` sends tools the same way. */
+export function wireTool(t: DeclaredTool): Record<string, unknown> {
   const { name, title, description, inputSchema, outputSchema, annotations, service, calledAs, server } = t;
   return Object.fromEntries(Object.entries({ name, title, description, inputSchema, outputSchema, annotations, service, calledAs, server }).filter(([, v]) => v !== undefined));
 }

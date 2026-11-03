@@ -14,6 +14,7 @@
  * JWK. The output is a standard `via-pop+jwt` the real SDK verifies unchanged —
  * upstream candidate: `buildPoP(payload, signer)`.
  */
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { generateP256Key, signES256, jwkThumbprint, mintNitroCa, buildCoseAttestation, buildRegistrationProof } from './sdk.js';
 import type {
   Jwk,
@@ -91,6 +92,65 @@ export async function softwareKey(): Promise<ViaAgentKey> {
     sign: (bytes) => signES256(bytes, kp.privateJwk),
     // Possession and nothing more: `device-self` with the key's proof (`none` is refused, §16.5).
     evidence: async (regNonce, aud) => ({ type: 'device-self', proof: await registrationProof(key, regNonce, aud) }),
+  };
+  return key;
+}
+
+/** A software key kept in a file, and the DID Humanos gave it. */
+export interface StoredKey extends ViaAgentKey {
+  /** The DID Humanos gave this key at registration, once `save` has recorded one. */
+  readonly did: string | undefined;
+  /** True when this call created the key: there was no file. */
+  readonly minted: boolean;
+  /** Record the DID next to the key. */
+  save(did: string): void;
+}
+
+interface StoredKeyFile {
+  privateJwk: Jwk;
+  publicJwk: Jwk;
+  did?: string;
+}
+
+/**
+ * {@link softwareKey}'s rung, `pop/self`, for an agent that restarts. The key is the agent: a new key
+ * registers a new agent with a new DID, and the mandates granted to the old one do not follow it. So
+ * this key lives in `file`, readable only by its owner: created on the first run, loaded on every run
+ * after. Keep the file like the organization's API key — out of the repository, backed up, one per
+ * agent. A key in a KMS or an attested enclave earns more, through the same {@link ViaAgentKey}.
+ */
+export async function storedSoftwareKey(file: string): Promise<StoredKey> {
+  let stored: StoredKeyFile;
+  let minted = false;
+  if (existsSync(file)) {
+    stored = JSON.parse(readFileSync(file, 'utf8')) as StoredKeyFile;
+  } else {
+    const kp = await generateP256Key();
+    stored = { privateJwk: kp.privateJwk, publicJwk: kp.publicJwk };
+    try {
+      // `wx` fails when the file appeared since the check: another process created this agent's key
+      // first, and overwriting it would lose that agent. Use theirs.
+      writeFileSync(file, JSON.stringify(stored, null, 2), { mode: 0o600, flag: 'wx' });
+      minted = true;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
+      stored = JSON.parse(readFileSync(file, 'utf8')) as StoredKeyFile;
+    }
+  }
+  const key: StoredKey = {
+    publicJwk: stored.publicJwk,
+    claimedAssurance: 'pop',
+    claimedBinding: 'self',
+    sign: (bytes) => signES256(bytes, stored.privateJwk),
+    evidence: async (regNonce, aud) => ({ type: 'device-self', proof: await registrationProof(key, regNonce, aud) }),
+    get did() {
+      return stored.did;
+    },
+    minted,
+    save(did: string) {
+      stored = { ...stored, did };
+      writeFileSync(file, JSON.stringify(stored, null, 2), { mode: 0o600 });
+    },
   };
   return key;
 }
