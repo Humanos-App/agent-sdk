@@ -1,16 +1,18 @@
 /**
- * THE LIVE TIER — the framework drivers the contract runs, on a real model against the dev platform, as one agent of
- * a test organization whose policy a person set once, by hand, in the dashboard.
+ * THE LIVE TIER — the framework drivers the contract runs, against a real platform (dev, or a local stack), as one
+ * agent of a test organization whose policy a person set once, by hand, in the dashboard.
  *
  * It runs only when its variables are set, in the environment or in `test/live/.env` (git-ignored):
- * `HUMANOS_LIVE_API_KEY` and `HUMANOS_LIVE_SIGNATURE_SECRET` (the test organization's API key on dev),
- * `ANTHROPIC_API_KEY`, and optionally `HUMANOS_LIVE_MCP_URL` (default dev), `HUMANOS_LIVE_MODEL` (default Claude
- * Haiku), `HUMANOS_LIVE_AGENT_KEY` (the agent's key file content, for CI; else `test/live/.humanos/agent-key.json`).
+ * `HUMANOS_LIVE_API_KEY` and `HUMANOS_LIVE_SIGNATURE_SECRET` (the test organization's API key), and optionally
+ * `HUMANOS_LIVE_MCP_URL` (default dev; a local stack: `http://localhost:4005/mcp`), `ANTHROPIC_API_KEY` (a real
+ * model; without it the scripted model plays it, so the run is free and the same each time), `HUMANOS_LIVE_MODEL`
+ * (default Claude Haiku, or `scripted`), `HUMANOS_LIVE_AGENT_KEY` (the agent's key file content, for CI; else
+ * `test/live/.humanos/<connector host>/agent-key.json`, one agent per platform).
  *
  * What the platform answered is read from the connector calls the agent made (`verify`, `report_outcome`,
  * `get_policy`); the dashboard's audit trail is the person's check.
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { parseEnv } from 'node:util';
 import { createViaMcpClient, type ViaMcpClient } from '../../src/mcp/client.js';
@@ -27,7 +29,9 @@ export interface LiveConfig {
   apiKey: string;
   signatureSecret: string;
   mcpUrl: string;
-  anthropicKey: string;
+  /** Absent: the scripted model plays the model. */
+  anthropicKey?: string;
+  /** `scripted`, or the real model's name. */
   model: string;
   agentKey?: string;
   dir: string;
@@ -39,15 +43,18 @@ export function liveConfig(): LiveConfig | undefined {
   const file = here('./.env');
   const env = { ...(existsSync(file) ? (parseEnv(readFileSync(file, 'utf8')) as Record<string, string>) : {}), ...process.env };
   const { HUMANOS_LIVE_API_KEY: apiKey, HUMANOS_LIVE_SIGNATURE_SECRET: signatureSecret, ANTHROPIC_API_KEY: anthropicKey } = env;
-  if (!apiKey || !signatureSecret || !anthropicKey) return undefined;
+  if (!apiKey || !signatureSecret) return undefined;
+  const mcpUrl = env.HUMANOS_LIVE_MCP_URL || 'https://mcpdev.humanos.tech/mcp';
+  const scripted = !anthropicKey || env.HUMANOS_LIVE_MODEL === 'scripted';
   return {
     apiKey,
     signatureSecret,
-    anthropicKey,
-    mcpUrl: env.HUMANOS_LIVE_MCP_URL || 'https://mcpdev.humanos.tech/mcp',
-    model: env.HUMANOS_LIVE_MODEL || 'claude-haiku-5-5',
+    mcpUrl,
+    ...(scripted ? {} : { anthropicKey }),
+    model: scripted ? 'scripted' : env.HUMANOS_LIVE_MODEL || 'claude-haiku-5-5',
     ...(env.HUMANOS_LIVE_AGENT_KEY ? { agentKey: env.HUMANOS_LIVE_AGENT_KEY } : {}),
-    dir: here('./.humanos'),
+    // One agent per platform: a key registered on one is unknown to another.
+    dir: here(`./.humanos/${new URL(mcpUrl).host.replace(/[^A-Za-z0-9.-]/g, '_')}`),
   };
 }
 
@@ -60,6 +67,8 @@ export interface ConnectorCall {
 
 export interface LiveAgent {
   via: Via;
+  /** The connector the agent talks to. */
+  mcpUrl: string;
   /** Every connector call since the last `reset`, with the platform's answer. */
   calls: ConnectorCall[];
   reset(): void;
@@ -89,9 +98,11 @@ export async function liveAgent(cfg: LiveConfig): Promise<LiveAgent> {
       return r;
     },
   };
+  mkdirSync(cfg.dir, { recursive: true, mode: 0o700 });
   const v = await via({ client, env: cfg.agentKey ? { HUMANOS_AGENT_KEY: cfg.agentKey } : {}, dir: cfg.dir, onWarning: (m) => void process.stderr.write(`live: ${m}\n`) });
   return {
     via: v,
+    mcpUrl: cfg.mcpUrl,
     calls,
     reset: () => void calls.splice(0),
     verdicts: () =>
@@ -137,7 +148,7 @@ export async function preflight(agent: LiveAgent): Promise<void> {
   throw new Error(
     [
       `The test organization's policy is not set for the live tests (agent ${agent.via.did}).`,
-      `In the dev dashboard, Agents, then Policy, under "${LIVE_SERVICE}", set:`,
+      `In the dashboard of the organization whose key the tests use (${new URL(agent.mcpUrl).host}), Agents, then Policy, under "${LIVE_SERVICE}", set:`,
       ...wrong.map(([tool, access]) => `  ${tool}: ${DASHBOARD_NAME[access]} (now ${now(tool)})`),
       'Then run `npm run test:live` again.',
     ].join('\n'),
