@@ -74,6 +74,20 @@ describe('McpGuardVerifier — the GuardVerifier over the connector', () => {
     ]);
   });
 
+  it('verify and report with no pop when Humanos holds the key: no `pop` field at all (v0.3 §16.14)', async () => {
+    const { client, calls } = fakeClient({
+      verify: json({ decision: 'allow', evaluations: [], decisionEventId: 'urn:d' }),
+      report_outcome: json({ recorded: 'urn:o' }),
+    });
+    const v = new McpGuardVerifier(client);
+    await v.verify({ agentDid: AGENT, mandateId: mandate.id, tool: 't', params: { tool: 't' } });
+    await v.reportOutcome({ agentDid: AGENT, decisionEventId: 'urn:d', outcome: 'completed' });
+    expect(calls).toEqual([
+      { name: 'verify', args: { agentDid: AGENT, mandateId: mandate.id, tool: 't', params: { tool: 't' } } },
+      { name: 'report_outcome', args: { agentDid: AGENT, decisionEventId: 'urn:d', outcome: 'completed' } },
+    ]);
+  });
+
   it('verify: a DENY is an outcome, not an error', async () => {
     const { client } = fakeClient({ verify: json({ decision: 'deny', reason: 'rule_failed', evaluations: [{ rule: 'cap', result: 'fail' }] }) });
     const out = await new McpGuardVerifier(client).verify({ agentDid: AGENT, mandateId: mandate.id, tool: 't', params: { tool: 't' }, pop: 'p' });

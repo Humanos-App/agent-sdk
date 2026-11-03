@@ -44,10 +44,13 @@ export interface ProxiedTool {
 
 export interface ViaMcpProxyConfig {
   upstreams: Upstream[];
-  /** The Humanos connector, on the organization's key (`createViaMcpClient`). */
+  /** The Humanos connector, on the organization's key or the agent's agent key (`createViaMcpClient`). */
   humanos: ViaMcpClient;
-  /** The proxy's own key — it is the agent actor — and the DID it registered under. */
-  agentKey: ViaAgentKey;
+  /**
+   * The proxy's own key — it is the agent actor — and the DID it registered under. No key when Humanos holds it
+   * (`registerAgent(humanos, humanosHoldsKey)`): `humanos` then holds the agent key it registered with.
+   */
+  agentKey?: ViaAgentKey;
   did: string;
   /** Declare the merged surface to Humanos at start, and on each `refresh` that changes it (default true). */
   declare?: boolean;

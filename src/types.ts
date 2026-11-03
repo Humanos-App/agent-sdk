@@ -90,7 +90,8 @@ export interface VerifyInput extends CallAuthority {
   tool: string;
   /** Full executionParams INCLUDING the `tool` discriminator — must equal the PoP-hashed params. */
   params: Record<string, unknown>;
-  pop: string;
+  /** The agent's proof of possession. Absent when Humanos holds the agent's key (v0.3 §16.14): it signs for the agent. */
+  pop?: string;
   /** v0.3 §16.16 — the party the call goes to, a DID or an `https` origin: an `allow` then carries the call proof. */
   audience?: string;
   now?: Date;
@@ -100,7 +101,8 @@ export interface ReportOutcomeInput extends CallAuthority {
   decisionEventId: string;
   outcome: 'completed' | 'failed';
   error?: string;
-  pop: string;
+  /** As on `VerifyInput`: absent when Humanos holds the agent's key. */
+  pop?: string;
   now?: Date;
 }
 
