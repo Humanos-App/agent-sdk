@@ -2,7 +2,8 @@
  * THE LIVE TIER — the framework drivers the contract runs, against a real platform (dev, or a local stack), as one
  * agent of a test organization whose policy a person set once, by hand, in the dashboard.
  *
- * It runs only when its variables are set, in the environment or in `test/live/.env` (git-ignored):
+ * It runs only when its variables are set, in the environment or in `test/.env` (git-ignored; `test/live/.env` is
+ * read when there is no `test/.env`):
  * `HUMANOS_LIVE_API_KEY` and `HUMANOS_LIVE_SIGNATURE_SECRET` (the test organization's API key), and optionally
  * `HUMANOS_LIVE_MCP_URL` (default dev; a local stack: `http://localhost:4005/mcp`), `ANTHROPIC_API_KEY` (a real
  * model; without it the scripted model plays it, so the run is free and the same each time), `HUMANOS_LIVE_MODEL`
@@ -43,8 +44,13 @@ export interface LiveConfig {
 
 const here = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
+/** The tests' credentials file: `test/.env`, else `test/live/.env`, where it was first. */
+export function testEnvFile(): string | undefined {
+  return [here('../.env'), here('./.env')].find((f) => existsSync(f));
+}
+
 export function liveConfig(): LiveConfig | undefined {
-  const file = here('./.env');
+  const file = testEnvFile() ?? '';
   const env = { ...(existsSync(file) ? (parseEnv(readFileSync(file, 'utf8')) as Record<string, string>) : {}), ...process.env };
   const { HUMANOS_LIVE_API_KEY: apiKey, HUMANOS_LIVE_SIGNATURE_SECRET: signatureSecret, ANTHROPIC_API_KEY: anthropicKey } = env;
   if (!apiKey || !signatureSecret) return undefined;

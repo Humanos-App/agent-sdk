@@ -1,6 +1,7 @@
 node_modules/
 dist/
 
-# The live tier: its variables and the test agent's key
+# The tests' credentials (test/.env; test/live/.env before it) and the live test agent's key
+test/.env
 test/live/.env
 test/live/.humanos/
