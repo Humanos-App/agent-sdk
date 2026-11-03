@@ -22,6 +22,7 @@ For complete, runnable agents built on it, see
 | **`McpGuardVerifier`**, **`policyMandates`** | the connector as the guard's verifier, and the mandate each call presents, from the policy (`getPolicy`) and the mandates held (`getMandates`) |
 | **`requestMandate`**, **`waitForMandate`** | ask a person for a mandate a tool needs, under a control `getAction` describes or as a one-call authorization, and wait for their answer (`mandateStatus`) |
 | **`startViaMcpProxy`** | a governing proxy in front of MCP servers you did not write; `refresh()` declares their new tools |
+| **`@humanos/agent-sdk/mcp`**, **`via().mcp`** | the connection wrapper: an MCP client transport with every `tools/list` declared and every `tools/call` checked, the proxy inside the agent's process; `routeStdio` puts a stdio server entry behind the proxy, which `humanos-agent proxy` runs |
 | **`registerAgent`** | register the agent's key with the organization, and optionally its tools; Humanos grades how the key is held and answers the agent's DID |
 | **`declareTools`** | tell Humanos which tools an agent can call, each as its server describes it, one call per service |
 | **`ToolRegistry`** | every tool a process hands its adapters, declared as one list per service, again only when a service's list changes |

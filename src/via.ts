@@ -16,6 +16,7 @@ import { createViaMcpClient, type ViaMcpClient } from './mcp/client.js';
 import { McpGuardVerifier, policyMandates } from './mcp/guard-verifier.js';
 import { registerAgent } from './mcp/register.js';
 import { ToolRegistry } from './mcp/tool-registry.js';
+import { createViaMcp, type ViaMcp } from './mcp/transport.js';
 
 /** The Humanos MCP connector, when `HUMANOS_MCP_URL` names no other. */
 export const HUMANOS_MCP_URL = 'https://mcp.humanos.tech/mcp';
@@ -43,6 +44,8 @@ export interface Via {
   guard: ViaGuard;
   /** Every tool the adapters see is added here, and declared by service. */
   tools: ToolRegistry;
+  /** MCP connections through Humanos: the connection wrapper, which tools it checks, and stdio routing. */
+  mcp: ViaMcp;
 }
 
 let fromEnvironment: Promise<Via> | undefined;
@@ -72,8 +75,9 @@ async function build(options: ViaOptions): Promise<Via> {
     mandates: policyMandates(client, did),
     ...(options.mode ? { mode: options.mode } : {}),
   });
-  const tools = new ToolRegistry(client, did, options.onWarning ? { onWarning: options.onWarning } : {});
-  return { client, key, did, guard, tools };
+  const warnings = options.onWarning ? { onWarning: options.onWarning } : {};
+  const tools = new ToolRegistry(client, did, warnings);
+  return { client, key, did, guard, tools, mcp: createViaMcp({ guard, tools, ...warnings }) };
 }
 
 /** The process environment over `.env`. `util.parseEnv` is Node 20.12 and later; before it, only the environment. */

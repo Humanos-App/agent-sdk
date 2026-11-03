@@ -13,10 +13,17 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./mcp": {
+      "types": "./dist/mcp/index.d.ts",
+      "import": "./dist/mcp/index.js"
+    },
     "./testing": {
       "types": "./dist/testing.d.ts",
       "import": "./dist/testing.js"
     }
+  },
+  "bin": {
+    "humanos-agent": "./dist/bin/humanos-agent.js"
   },
   "files": [
     "dist"
@@ -34,6 +41,7 @@
   },
   "devDependencies": {
     "@humanos/via-sdk-v03": "file:vendor/humanos-via-sdk-v03-0.8.0.tgz",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@types/node": "^22.20.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.9"
