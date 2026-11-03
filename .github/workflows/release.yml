@@ -1,0 +1,44 @@
+name: release
+
+# A GitHub release, created by hand from the GitHub UI, publishes the package to npm once CI passes (the unit tests on
+# Node 22 and 24, and every framework at its latest and lowest supported version). Nothing else publishes: a push, a
+# merge to main, or a tag alone does not.
+# The version comes from the release tag (v1.2.3 → 1.2.3), set on the runner only: the build writes it into the client
+# (scripts/write-version.mjs), and nothing is committed back. With no publishConfig.tag the dist-tag is `latest`.
+on:
+  release:
+    types: [published]
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set version (release tag)
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: npm version "${TAG#v}" --no-git-tag-version --allow-same-version
+
+      # prepublishOnly runs the type check and the unit tests again; prepare rebuilds dist/ with the tag's version.
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

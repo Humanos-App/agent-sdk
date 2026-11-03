@@ -100,7 +100,7 @@ export async function initCommand(argv: string[], ctx: CliContext): Promise<{ fr
   if (framework === 'claude-agent-sdk') {
     change(join('.claude', 'settings.json'), (current) => withClaudeHooks(current));
     ctx.out('Hooks written to .claude/settings.json: every tool call is checked, built-in tools too, with no change to the agent’s code.');
-    ctx.out('If the agent passes `settingSources: []`, add the hooks in code: `hooks: (await claudeAgentSdk()).gate()` from @humanos/agent-sdk/claude-agent-sdk.');
+    ctx.out('If the agent passes `settingSources: []`, add the hooks in code: `hooks: (await claudeAgentSdk()).gate()` from @humanos-ai/agent-sdk/claude-agent-sdk.');
   } else {
     ctx.out('Add to the agent’s code:');
     for (const line of SNIPPETS[framework]) ctx.out(`  ${line}`);
@@ -114,17 +114,17 @@ export async function initCommand(argv: string[], ctx: CliContext): Promise<{ fr
 
 const SNIPPETS: Record<Exclude<Framework, 'claude-agent-sdk'>, string[]> = {
   'ai-sdk': [
-    "import { aiSdk } from '@humanos/agent-sdk/ai-sdk';",
+    "import { aiSdk } from '@humanos-ai/agent-sdk/ai-sdk';",
     'const humanos = await aiSdk();',
     "generateText({ model, tools: humanos.guard(tools, 'Your service'), prompt });  // or streamText, ToolLoopAgent",
   ],
   langchain: [
-    "import { langchain } from '@humanos/agent-sdk/langchain';",
+    "import { langchain } from '@humanos-ai/agent-sdk/langchain';",
     'const humanos = await langchain();',
     "createAgent({ model, tools, middleware: [humanos.gate({ service: 'Your service' })] });",
   ],
   custom: [
-    "import { via } from '@humanos/agent-sdk';",
+    "import { via } from '@humanos-ai/agent-sdk';",
     'const humanos = await via();',
     "humanos.tools.add([{ name, description, inputSchema, service: 'Your service' }]);  // once, for each tool",
     'await humanos.guard.call(name, args, (a) => runTheTool(a));  // around every call',

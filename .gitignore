@@ -5,3 +5,6 @@ dist/
 test/.env
 test/live/.env
 test/live/.humanos/
+
+# Generated from package.json at build, type check and test (scripts/write-version.mjs)
+src/version.ts

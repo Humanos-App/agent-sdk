@@ -1,5 +1,5 @@
 /**
- * CLAUDE AGENT SDK — `@humanos/agent-sdk/claude-agent-sdk`. Every tool call the agent makes, its built-in tools
+ * CLAUDE AGENT SDK — `@humanos-ai/agent-sdk/claude-agent-sdk`. Every tool call the agent makes, its built-in tools
  * (`Bash`, `Write`, `Edit`, …) as well as its MCP servers', is checked in a `PreToolUse` hook and settled in
  * `PostToolUse` / `PostToolUseFailure`. Humanos only ever refuses: an allowed call goes on to the agent's own
  * permissions, which still decide it.

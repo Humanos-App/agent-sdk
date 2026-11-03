@@ -1,5 +1,5 @@
 /**
- * The agent-side platform client — `@humanos/agent-sdk`'s HTTP transport: join
+ * The agent-side platform client — `@humanos-ai/agent-sdk`'s HTTP transport: join
  * (actor genesis), guardrail extraction, mandate issuance, the `GuardVerifier`
  * transport (so the UNCHANGED `ViaGuard` runs over HTTP), actor lifecycle ops
  * (rotate/renew — v0.3), and sub-agent delegation.

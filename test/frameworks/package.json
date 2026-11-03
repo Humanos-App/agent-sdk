@@ -1,5 +1,5 @@
 {
-  "name": "@humanos/agent-sdk-framework-tests",
+  "name": "@humanos-ai/agent-sdk-framework-tests",
   "private": true,
   "type": "module",
   "description": "Frameworks too heavy for the package's own devDependencies (Claude Agent SDK ships its engine as a native binary): `npm ci` here before `npm run test:frameworks` at the root. Peers resolve from the root (.npmrc), so there is one copy of each.",

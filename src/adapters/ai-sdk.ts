@@ -1,5 +1,5 @@
 /**
- * VERCEL AI SDK — `@humanos/agent-sdk/ai-sdk`, for `generateText`, `streamText` and `ToolLoopAgent` (AI SDK 5 and
+ * VERCEL AI SDK — `@humanos-ai/agent-sdk/ai-sdk`, for `generateText`, `streamText` and `ToolLoopAgent` (AI SDK 5 and
  * later), and so for Cloudflare Agents (`AIChatAgent` runs `streamText`) and OpenRouter as a provider.
  *
  * `guard(tools, service)` hands the same `ToolSet` back with each `execute` going through Humanos first (checked, run,
