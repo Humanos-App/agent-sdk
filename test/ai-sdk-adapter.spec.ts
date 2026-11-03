@@ -2,6 +2,7 @@ import { jsonSchema, tool, type ToolSet } from 'ai';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { aiSdk } from '../src/adapters/ai-sdk.js';
+import { ViaDeniedError } from '../src/guard.js';
 import { agentScene } from './harness/agent.js';
 
 describe('aiSdk — what guard leaves alone, and what describe declares', () => {
@@ -20,6 +21,20 @@ describe('aiSdk — what guard leaves alone, and what describe declares', () => 
     const t = tool({ inputSchema: jsonSchema({ type: 'object' }), execute: async () => 'ok' });
     expect(humanos.guard({ lookup_order: t }, 'Orders').lookup_order).toBe(t);
     expect(humanos.guard({ lookup_order: t }, 'Support desk').lookup_order).not.toBe(t);
+    await scene.close();
+  });
+
+  it('a refusal reaches the model in the words every adapter uses, still a ViaDeniedError; unreachable fails closed', async () => {
+    const scene = await agentScene({ issue_refund: 'deny', lookup_order: 'allow' });
+    const humanos = await aiSdk(scene.via);
+    let ran = 0;
+    const tools = humanos.guard({ issue_refund: tool({ inputSchema: jsonSchema({ type: 'object' }), execute: async () => ++ran }), lookup_order: tool({ inputSchema: jsonSchema({ type: 'object' }), execute: async () => ++ran }) }, 'Support desk');
+    const refused = await (tools.issue_refund!.execute as (i: unknown, o: unknown) => Promise<unknown>)({}, {}).catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(ViaDeniedError);
+    expect((refused as Error).message).toBe('Blocked by Humanos (policy_denied): the organization’s policy does not allow it. Nothing was run. Do not retry.');
+    scene.humanos.down = true;
+    await expect((tools.lookup_order!.execute as (i: unknown, o: unknown) => Promise<unknown>)({}, {})).rejects.toThrow(/^Blocked: Humanos could not be reached/);
+    expect(ran).toBe(0);
     await scene.close();
   });
 
