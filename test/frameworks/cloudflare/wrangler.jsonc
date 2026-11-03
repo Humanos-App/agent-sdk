@@ -1,0 +1,10 @@
+// The framework tests' Cloudflare Agent, run locally by wrangler (workerd): never deployed.
+{
+  "name": "humanos-agent-sdk-cloudflare-test",
+  "main": "worker.ts",
+  "compatibility_date": "2026-10-01",
+  // agent-sdk uses node:crypto (the connector's request signature), node:fs, node:path and node:util.
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": { "bindings": [{ "name": "SupportAgent", "class_name": "SupportAgent" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SupportAgent"] }]
+}

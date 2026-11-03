@@ -54,6 +54,9 @@
   the dev platform. Its preflight declares the live tools and, until the test organization's policy gives them
   Allow, Deny and Delegate, fails naming what to set in the dashboard. Each framework: an allowed call runs and its
   outcome is recorded, a denied one never runs, a Delegate one is refused `mandate_required`.
+- Cloudflare Agents tested in the Workers runtime: an `Agent` (a Durable Object) run by workerd through wrangler, its
+  tools through the AI SDK adapter. agent-sdk runs under `nodejs_compat`; a Worker has no disk, so the agent's key
+  comes from a secret (`HUMANOS_AGENT_KEY`) handed to `via({ env })` with the connector's credentials.
 - OpenRouter tested as an AI SDK provider (`@openrouter/ai-sdk-provider`): the scripted model also speaks the
   OpenAI-compatible Chat Completions API, so the contract runs over OpenRouter's wire; the live tier runs it on a real
   OpenRouter model with `OPENROUTER_API_KEY`.
