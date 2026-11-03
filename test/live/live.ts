@@ -23,8 +23,9 @@ import type { LocalTool } from '../frameworks/contract.js';
 
 export const LIVE_SERVICE = 'Support desk (live test)';
 /** The access the test organization's policy must give each tool, as `get_policy` names it. */
-export const LIVE_POLICY = { lookup_order: 'allow', issue_refund: 'deny', approve_discount: 'mandate' } as const;
-const DASHBOARD_NAME = { allow: 'Allow', deny: 'Deny', mandate: 'Delegate' } as const;
+/** `approve_discount` is Restrict: a control whose rule keeps `percent` under 10. */
+export const LIVE_POLICY = { lookup_order: 'allow', issue_refund: 'deny', approve_discount: 'rules' } as const;
+const DASHBOARD_NAME = { allow: 'Allow', deny: 'Deny', rules: 'Restrict (a control: percent under 10)' } as const;
 
 export interface LiveConfig {
   apiKey: string;
@@ -147,7 +148,13 @@ export async function preflight(agent: LiveAgent): Promise<void> {
   await agent.via.tools.add(liveTools().tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema, service: LIVE_SERVICE })));
   const policy = await getPolicy(agent.via.client, agent.via.did);
   const wrong = Object.entries(LIVE_POLICY).filter(([tool, access]) => policy.tools.find((t) => t.tool === tool)?.access !== access);
-  if (!wrong.length) return;
+  if (!wrong.length) {
+    // What the Restrict control holds, as the platform says it: the run's output shows the rule the tests meet.
+    for (const c of policy.tools.find((t) => t.tool === 'approve_discount')?.controls ?? []) {
+      process.stderr.write(`live: approve_discount control "${c.name}": ${c.rules.join('; ')}${c.limits.length ? ` (${c.limits.map((l) => `${l.name} = ${JSON.stringify(l.value)}`).join(', ')})` : ''}\n`);
+    }
+    return;
+  }
   const now = (tool: string) => policy.tools.find((t) => t.tool === tool)?.access ?? 'not declared';
   throw new Error(
     [
