@@ -24,6 +24,15 @@
   schemas through AI SDK's `asSchema`. A tool with no `execute`, or one a wrapped connection or routed service
   checks, is left as it is. `ai` is an optional peer (>=5). Passes the contract through `generateText` and
   `streamText`, with MCP over `@ai-sdk/mcp`.
+- `@humanos/agent-sdk/claude-agent-sdk`: `claudeAgentSdk(via?)`. `gate(existing?)` gives `PreToolUse` (check;
+  refuse with the reason, or say nothing so the agent's own permissions decide; `onFailure: 'block'`),
+  `PostToolUse` and `PostToolUseFailure` (settle), ahead of the agent's own hooks. An MCP tool
+  (`mcp__<server>__<tool>`) is checked as `<tool>` under its server's service, a built-in tool under
+  `Claude Agent SDK`. `sdkServer(options, service?)` declares an in-process server's tools (zod shapes as JSON
+  Schema); `mcpServers(servers)` routes stdio entries behind the proxy. `zod` is an optional peer.
+- `humanos-agent hook claude`: the same hooks as a command, for `.claude/settings.json` (the SDK loads it by
+  default), so an agent with no Humanos code is governed. The decision waits in `.humanos/pending/` between the two
+  hook processes. It fails closed: a `PreToolUse` it cannot check answers deny.
 - `via().mcp.route(spec, via?)` remembers the service it routed, and `checks` answers true for its tools.
 - `via({ cwd })`: the project `.env` and `.humanos` are read from.
 - Framework tests (`npm run test:frameworks`, a CI job of its own): a scripted Anthropic model server, a fake
