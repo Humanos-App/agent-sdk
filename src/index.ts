@@ -13,6 +13,7 @@
 export {
   softwareKey,
   storedSoftwareKey,
+  softwareKeyFromJson,
   registrationProof,
   deviceSelfKey,
   custodialKey,
@@ -29,7 +30,7 @@ export type { ViaAgentKey, StoredKey, ConfinementEvidence, Assurance, Binding } 
 
 // The PEP — every tool call: the mandate it presents, if any → challenge → PoP → verify → execute/refuse.
 export { ViaGuard, ViaDeniedError } from './guard.js';
-export type { GuardOptions, GuardCallOutcome, GuardCallContext, CallMandate, MandateSource } from './guard.js';
+export type { GuardOptions, GuardCallOutcome, GuardCallContext, GuardCheck, CallMandate, MandateSource } from './guard.js';
 
 // The platform transport + the delegation ceremony.
 export { MiniPlatformClient, delegationParams } from './client.js';
@@ -55,10 +56,17 @@ export type { Upstream, UpstreamSpec, UpstreamServer, UpstreamTool, UpstreamResu
 // call per service.
 export { declareTools, DECLARE_TOOLS_MAX } from './mcp/declare.js';
 export type { DeclaredTool, DeclareToolsOptions, ServiceDeclaration } from './mcp/declare.js';
+// Every tool the adapters of one process see, declared as one list per service.
+export { ToolRegistry } from './mcp/tool-registry.js';
+export type { ToolRegistryOptions } from './mcp/tool-registry.js';
 
 // Registering — the agent's key, graded by how it is held, and the DID every call after names.
 export { registerAgent } from './mcp/register.js';
 export type { RegisteredAgent, RegisterAgentOptions } from './mcp/register.js';
+
+// The agent's Humanos from its environment — connector, key, DID, guard and registry — what framework adapters build on.
+export { via, HUMANOS_MCP_URL } from './via.js';
+export type { Via, ViaOptions } from './via.js';
 
 // EXTRACTION — parse an already-built agent's tool surface into a VIAAction draft. Params and
 // descriptions are derived; `rules`/`userParams` are ALWAYS empty (R8), because constraints are

@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- `ViaGuard.check(tool, args)` and `ViaGuard.settle(checked, { error? })`: `call` in two halves, for a framework that
+  decides a call in one hook and runs the tool itself. `settle` takes the check or its plain `decisionId` and
+  `mandateId`, so a hook in another process can report. `call` is now `check`, run, `settle`, unchanged.
+- `via(options?)`: the agent's Humanos from its environment (`HUMANOS_API_KEY`, `HUMANOS_SIGNATURE_SECRET`,
+  `HUMANOS_MCP_URL`, `HUMANOS_AGENT_KEY`, `HUMANOS_DIR`, over the working directory's `.env`): the connector, the key,
+  the DID (registering the key when it has none), the guard and the tool registry. One per process without options.
+- `softwareKeyFromJson(json)`: `storedSoftwareKey`'s key from the key file's content, for an agent with no disk.
+- `ToolRegistry`: declares every tool added, as one list per service, so tool sets of one service added apart do
+  not replace each other on the platform.
+
 ## 0.4.2
 
 The version stays on 0.4.x until the spec has a new version.
