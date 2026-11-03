@@ -1,0 +1,122 @@
+/**
+ * VIA() — an agent's Humanos, set up from its environment: what `humanos-agent init` leaves behind, read back.
+ *
+ * One call gives a framework adapter everything it needs: the connector (`HUMANOS_API_KEY`,
+ * `HUMANOS_SIGNATURE_SECRET`), the agent's key (`HUMANOS_AGENT_KEY`, else `.humanos/agent-key.json`), its DID
+ * (registering the key when it has none yet), the guard every call goes through, and the registry its tools are
+ * declared through. The variables come from the process environment over the `.env` in the working directory, as
+ * `node --env-file` reads it: a variable already set wins.
+ */
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import * as util from 'node:util';
+import { ViaGuard } from './guard.js';
+import { softwareKeyFromJson, storedSoftwareKey, type StoredKey, type ViaAgentKey } from './key-provider.js';
+import { createViaMcpClient, type ViaMcpClient } from './mcp/client.js';
+import { McpGuardVerifier, policyMandates } from './mcp/guard-verifier.js';
+import { registerAgent } from './mcp/register.js';
+import { ToolRegistry } from './mcp/tool-registry.js';
+
+/** The Humanos MCP connector, when `HUMANOS_MCP_URL` names no other. */
+export const HUMANOS_MCP_URL = 'https://mcp.humanos.tech/mcp';
+
+export interface ViaOptions {
+  /** The variables to read. Default: the process environment over the working directory's `.env`. */
+  env?: Record<string, string | undefined>;
+  /** Where the agent's key file lives. Default: `HUMANOS_DIR`, else `.humanos` in the working directory. */
+  dir?: string;
+  /** The agent's key, when it is kept elsewhere (a KMS, an enclave). Default: `HUMANOS_AGENT_KEY`, else the key file. */
+  key?: ViaAgentKey;
+  /** The connector, as given (not initialized again). Default: one built from the environment, and initialized. */
+  client?: ViaMcpClient;
+  /** The guard's mode. Default `enforce`. */
+  mode?: 'observe' | 'enforce';
+  /** Where warnings go: a declaration cut or refused. Default: stderr. */
+  onWarning?: (message: string) => void;
+}
+
+export interface Via {
+  client: ViaMcpClient;
+  key: ViaAgentKey;
+  did: string;
+  /** Every tool call goes through it: `check` and `settle`, or `call`. */
+  guard: ViaGuard;
+  /** Every tool the adapters see is added here, and declared by service. */
+  tools: ToolRegistry;
+}
+
+let fromEnvironment: Promise<Via> | undefined;
+
+/**
+ * The agent's Humanos. Without options it is built once per process and shared, so every adapter in it declares
+ * through one registry: two registries would each replace the other's lists. With options, each call builds anew.
+ */
+export function via(options?: ViaOptions): Promise<Via> {
+  if (options) return build(options);
+  fromEnvironment ??= build({}).catch((e: unknown) => {
+    fromEnvironment = undefined; // a failed start (a missing variable, the connector down) may be retried
+    throw e;
+  });
+  return fromEnvironment;
+}
+
+async function build(options: ViaOptions): Promise<Via> {
+  const env = options.env ?? environment();
+  const client = options.client ?? (await connect(env));
+  const key = options.key ?? (await agentKey(env, options.dir));
+  const did = await didOf(client, key);
+  const guard = new ViaGuard({
+    agentKey: key,
+    agentDid: did,
+    verifier: new McpGuardVerifier(client),
+    mandates: policyMandates(client, did),
+    ...(options.mode ? { mode: options.mode } : {}),
+  });
+  const tools = new ToolRegistry(client, did, options.onWarning ? { onWarning: options.onWarning } : {});
+  return { client, key, did, guard, tools };
+}
+
+/** The process environment over `.env`. `util.parseEnv` is Node 20.12 and later; before it, only the environment. */
+function environment(): Record<string, string | undefined> {
+  const file = resolve('.env');
+  const parseEnv = (util as { parseEnv?: (content: string) => Record<string, string> }).parseEnv;
+  const fromFile = parseEnv && existsSync(file) ? parseEnv(readFileSync(file, 'utf8')) : {};
+  return { ...fromFile, ...process.env };
+}
+
+async function connect(env: Record<string, string | undefined>): Promise<ViaMcpClient> {
+  const client = createViaMcpClient({
+    url: env.HUMANOS_MCP_URL || HUMANOS_MCP_URL,
+    apiKey: required(env, 'HUMANOS_API_KEY'),
+    signatureSecret: required(env, 'HUMANOS_SIGNATURE_SECRET'),
+  });
+  await client.initialize();
+  return client;
+}
+
+async function agentKey(env: Record<string, string | undefined>, dir?: string): Promise<ViaAgentKey> {
+  if (env.HUMANOS_AGENT_KEY) return softwareKeyFromJson(env.HUMANOS_AGENT_KEY);
+  const home = resolve(dir ?? (env.HUMANOS_DIR || '.humanos'));
+  mkdirSync(home, { recursive: true, mode: 0o700 });
+  return storedSoftwareKey(join(home, 'agent-key.json'));
+}
+
+/** The DID kept with the key, else the one registering it gives: the same key always answers the same DID. */
+async function didOf(client: ViaMcpClient, key: ViaAgentKey): Promise<string> {
+  const kept = isKept(key) ? key.did : undefined;
+  if (kept) return kept;
+  const { did } = await registerAgent(client, key);
+  if (isKept(key)) key.save(did);
+  return did;
+}
+
+function isKept(key: ViaAgentKey): key is StoredKey {
+  return typeof (key as Partial<StoredKey>).save === 'function';
+}
+
+/** A variable `via` cannot start without; the message names it and never shows a value. */
+function required(env: Record<string, string | undefined>, name: string): string {
+  const value = env[name];
+  if (!value) throw new Error(`via: ${name} is not set (in the environment or .env); \`humanos-agent init\` adds it`);
+  return value;
+}

@@ -137,6 +137,23 @@ export async function storedSoftwareKey(file: string): Promise<StoredKey> {
       stored = JSON.parse(readFileSync(file, 'utf8')) as StoredKeyFile;
     }
   }
+  return keptKey(stored, minted, (next) => writeFileSync(file, JSON.stringify(next, null, 2), { mode: 0o600 }));
+}
+
+/**
+ * {@link storedSoftwareKey}'s key for an agent deployed where no file persists (a container, a Worker): `json` is the
+ * key file's content, from an environment variable or a secret. `save` keeps the DID for this process only; with the
+ * DID in `json`, the agent does not register again at each start.
+ */
+export function softwareKeyFromJson(json: string): StoredKey {
+  const stored = JSON.parse(json) as Partial<StoredKeyFile>;
+  if (!stored.privateJwk || !stored.publicJwk) throw new TypeError('via: an agent key needs privateJwk and publicJwk');
+  return keptKey(stored as StoredKeyFile, false, () => {});
+}
+
+/** A software key from its stored form; `persist` records the DID wherever the key is kept. */
+function keptKey(initial: StoredKeyFile, minted: boolean, persist: (stored: StoredKeyFile) => void): StoredKey {
+  let stored = initial;
   const key: StoredKey = {
     publicJwk: stored.publicJwk,
     claimedAssurance: 'pop',
@@ -149,7 +166,7 @@ export async function storedSoftwareKey(file: string): Promise<StoredKey> {
     minted,
     save(did: string) {
       stored = { ...stored, did };
-      writeFileSync(file, JSON.stringify(stored, null, 2), { mode: 0o600 });
+      persist(stored);
     },
   };
   return key;

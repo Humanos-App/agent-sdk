@@ -38,6 +38,30 @@ export interface GuardCallOutcome<T = unknown> {
   request?: MandateRequestHint;
 }
 
+/**
+ * A call decided and not yet run: what a framework that decides in one hook and reports in another holds between
+ * the two (`ViaGuard.check`, then `ViaGuard.settle`).
+ */
+export interface GuardCheck {
+  decision: 'allow' | 'deny';
+  /** True when the tool may run: an allow, or a deny under `observe`. */
+  proceed: boolean;
+  reason?: string;
+  evaluations: RuleEvaluation[];
+  /** On a deny that `observe` lets through. */
+  observed?: boolean;
+  /** On a `mandate_required` deny: the actions a mandate must be under, any one of them (v0.3 §21.3). */
+  under?: { id: string }[];
+  /** The mandate the call presented; none when the policy alone decided it. */
+  mandateId?: string;
+  /** On a `mandate_required` deny: what to ask a person for (`requestMandate`). */
+  request?: MandateRequestHint;
+  /** The decision `settle` reports against. Plain data, so a hook in another process can keep it and settle there. */
+  decisionId?: string;
+  /** The verifier's answer: with an `audience`, an allow carries the call proof (`outcome.callProof`). */
+  outcome: VerifyOutcome;
+}
+
 /** The mandate one call presents, with its pinned action for the advisory pre-flight. */
 export interface CallMandate {
   mandate: ViaMandateCredential;
@@ -167,6 +191,28 @@ export class ViaGuard {
     impl: ToolFn,
     opts: { audience?: string } = {},
   ): Promise<GuardCallOutcome<T>> {
+    const checked = await this.check(tool, args, opts);
+    if (!checked.proceed) {
+      throw new ViaDeniedError(checked.reason, checked.evaluations, checked.under, checked.mandateId, checked.request);
+    }
+    const { decision, reason, evaluations, observed, under, mandateId, request } = checked;
+    return {
+      decision,
+      ...(decision === 'deny' ? { reason, observed } : {}),
+      evaluations,
+      ...(under ? { under } : {}),
+      ...(request ? { request } : {}),
+      ...(mandateId ? { mandateId } : {}),
+      result: await this.execute<T>(args, impl, checked),
+    };
+  }
+
+  /**
+   * The first half of `call`, for a framework that runs the tool itself: the mandate, the pre-flight, verify, and the
+   * decision, with nothing run. When `proceed` is true the caller runs the tool and then `settle`s it; when false the
+   * tool must not run, and nothing is reported.
+   */
+  async check(tool: string, args: Record<string, unknown>, opts: { audience?: string } = {}): Promise<GuardCheck> {
     const params = { ...args, tool };
     let presented = await this.mandateFor(tool, params);
 
@@ -198,32 +244,31 @@ export class ViaGuard {
     // id alone when the platform appends the signed event later (outbox).
     const decisionId = outcome.event?.id ?? outcome.decisionEventId;
     const mandateId = presented?.mandate.id;
-    const presentedAs = mandateId ? { mandateId } : {};
-    const request = outcome.decision === 'deny' && outcome.reason === 'mandate_required' ? await this.requestFor(tool, outcome.under) : undefined;
+    const decided = { evaluations: outcome.evaluations, outcome, ...(mandateId ? { mandateId } : {}), ...(decisionId ? { decisionId } : {}) };
+    if (outcome.decision === 'allow') return { decision: 'allow', proceed: true, ...decided };
 
-    if (outcome.decision === 'allow') {
-      return {
-        decision: 'allow',
-        evaluations: outcome.evaluations,
-        ...presentedAs,
-        result: await this.execute<T>(args, impl, decisionId, outcome, mandateId),
-      };
-    }
-    if (this.mode === 'observe') {
-      // R5b: record the deny, execute anyway — and STILL report the execution
-      // outcome, so the chain honestly shows "denied, executed regardless".
-      return {
-        decision: 'deny',
-        reason: outcome.reason,
-        evaluations: outcome.evaluations,
-        observed: true,
-        ...(outcome.under ? { under: outcome.under } : {}),
-        ...(request ? { request } : {}),
-        ...presentedAs,
-        result: await this.execute<T>(args, impl, decisionId, outcome, mandateId),
-      };
-    }
-    throw new ViaDeniedError(outcome.reason, outcome.evaluations, outcome.under, mandateId, request);
+    const request = outcome.reason === 'mandate_required' ? await this.requestFor(tool, outcome.under) : undefined;
+    return {
+      decision: 'deny',
+      reason: outcome.reason,
+      // R5b: under `observe` the deny is recorded and the tool runs anyway — and its outcome is STILL reported, so
+      // the chain honestly shows "denied, executed regardless".
+      proceed: this.mode === 'observe',
+      ...(this.mode === 'observe' ? { observed: true } : {}),
+      ...(outcome.under ? { under: outcome.under } : {}),
+      ...(request ? { request } : {}),
+      ...decided,
+    };
+  }
+
+  /**
+   * The second half of `call`: report what became of a call `check` let run, `error` when the tool failed. Takes the
+   * check itself, or its `decisionId` and `mandateId` kept by a hook that runs in another process.
+   */
+  async settle(checked: Pick<GuardCheck, 'decisionId' | 'mandateId'>, result: { error?: unknown } = {}): Promise<void> {
+    if (result.error === undefined) return this.report(checked.decisionId, checked.mandateId, 'completed');
+    const { error } = result;
+    return this.report(checked.decisionId, checked.mandateId, 'failed', error instanceof Error ? error.message : String(error));
   }
 
   /** What to ask a person for: the controls the refusal named (`under`), else what the source read of the policy. */
@@ -247,13 +292,14 @@ export class ViaGuard {
    * execution and report leaves a decision event with no outcome — the visible
    * gap two-phase exists to expose.
    */
-  private async execute<T>(args: Record<string, unknown>, impl: ToolFn, decisionId: string | undefined, outcome: VerifyOutcome, mandateId?: string): Promise<T> {
+  private async execute<T>(args: Record<string, unknown>, impl: ToolFn, checked: GuardCheck): Promise<T> {
+    const { outcome, mandateId } = checked;
     try {
       const result = (await impl(args, { outcome, ...(mandateId ? { mandateId } : {}) })) as T;
-      await this.report(decisionId, mandateId, 'completed');
+      await this.settle(checked);
       return result;
     } catch (e) {
-      await this.report(decisionId, mandateId, 'failed', e instanceof Error ? e.message : String(e));
+      await this.settle(checked, { error: e });
       throw e;
     }
   }

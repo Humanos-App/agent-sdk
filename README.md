@@ -15,14 +15,16 @@ For complete, runnable agents built on it, see
 
 | | |
 |---|---|
-| **Keys** — `storedSoftwareKey`, `softwareKey`, `deviceSelfKey`, `custodialKey`, `attestedKey` | where the agent's key lives, and the evidence Humanos grades it on (v0.3 §16). `storedSoftwareKey` keeps the key in a file across restarts; `softwareKey` lasts only as long as the process |
-| **`ViaGuard`** | the gate around every tool call: the mandate it presents, if any → challenge → proof of possession → verify → run or refuse → report the outcome |
+| **Keys** — `storedSoftwareKey`, `softwareKeyFromJson`, `softwareKey`, `deviceSelfKey`, `custodialKey`, `attestedKey` | where the agent's key lives, and the evidence Humanos grades it on (v0.3 §16). `storedSoftwareKey` keeps the key in a file across restarts, `softwareKeyFromJson` reads that file's content from a variable where no file persists; `softwareKey` lasts only as long as the process |
+| **`via`** | the agent's Humanos from its environment: the connector, the key (`HUMANOS_AGENT_KEY` or `.humanos/agent-key.json`), the DID, the guard and the tool registry, one per process |
+| **`ViaGuard`** | the gate around every tool call: the mandate it presents, if any → challenge → proof of possession → verify → run or refuse → report the outcome. `check` and `settle` split it for a framework that runs the tool itself |
 | **`createViaMcpClient`** | the Humanos connector, authenticated with the organization's API key and signing secret |
 | **`McpGuardVerifier`**, **`policyMandates`** | the connector as the guard's verifier, and the mandate each call presents, from the policy (`getPolicy`) and the mandates held (`getMandates`) |
 | **`requestMandate`**, **`waitForMandate`** | ask a person for a mandate a tool needs, under a control `getAction` describes or as a one-call authorization, and wait for their answer (`mandateStatus`) |
 | **`startViaMcpProxy`** | a governing proxy in front of MCP servers you did not write; `refresh()` declares their new tools |
 | **`registerAgent`** | register the agent's key with the organization, and optionally its tools; Humanos grades how the key is held and answers the agent's DID |
 | **`declareTools`** | tell Humanos which tools an agent can call, each as its server describes it, one call per service |
+| **`ToolRegistry`** | every tool a process hands its adapters, declared as one list per service, again only when a service's list changes |
 | **`startViaMcpServer`** | expose a guarded agent's tools to an MCP host |
 | **`extractFromToolsList`**, **`importActionDraft`** | turn an existing tool surface into a draft action for the organization |
 | **`@humanos/agent-sdk/testing`** | `createTestVerifier`: an in-process verifier for testing an agent offline |

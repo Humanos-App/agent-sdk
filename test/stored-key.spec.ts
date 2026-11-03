@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createRegChallengeStore, registerAgentKey, registerChallenge } from '@humanos/via-sdk-v03';
 import { ViaGuard } from '../src/guard.js';
-import { storedSoftwareKey } from '../src/key-provider.js';
+import { softwareKeyFromJson, storedSoftwareKey } from '../src/key-provider.js';
 import { createTestVerifier } from '../src/testing.js';
 
 const file = () => join(mkdtempSync(join(tmpdir(), 'via-key-')), 'key.json');
@@ -55,5 +55,25 @@ describe('storedSoftwareKey — a key that survives the process', () => {
       { store, audience: aud },
     );
     expect(res.ok && [res.assurance, res.binding]).toEqual(['pop', 'self']);
+  });
+});
+
+describe('softwareKeyFromJson — the key file content, for an agent with no disk', () => {
+  it('is the stored key: same public key, same DID, and save keeps a DID for the process only', async () => {
+    const f = file();
+    const stored = await storedSoftwareKey(f);
+    stored.save('did:web:humanos.tech:agent:x');
+    const json = readFileSync(f, 'utf8');
+    const k = softwareKeyFromJson(json);
+    expect(k.publicJwk).toEqual(stored.publicJwk);
+    expect(k.did).toBe('did:web:humanos.tech:agent:x');
+    expect(k.minted).toBe(false);
+    k.save('did:web:humanos.tech:agent:y');
+    expect(k.did).toBe('did:web:humanos.tech:agent:y');
+    expect(readFileSync(f, 'utf8')).toBe(json);
+  });
+
+  it('refuses content with no key in it', () => {
+    expect(() => softwareKeyFromJson('{"did":"did:web:humanos.tech:agent:x"}')).toThrow(/privateJwk and publicJwk/);
   });
 });
