@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+Needs a Humanos platform where an agent key registers an agent with no key and verifies its calls without a proof
+(v0.3 §16.14). Released once the platform serving it is deployed.
+
+- `registerAgent(client, humanosHoldsKey)`: Humanos mints the agent's key and holds it, for an agent with no secure
+  place to keep one. Only under an agent key issued for this agent; the organization's API key is refused
+  `custodial_needs_agent_key`. No challenge is asked for. The answer says `custody: 'platform'`.
+- `registerAgent` refuses a key it was not given (`undefined`, `null`, anything that is not a key) with a
+  `TypeError` before it calls Humanos. A key left out by mistake would otherwise be an agent whose key Humanos holds,
+  for good.
+- `ViaGuard` without `agentKey`, and the proxy's `agentKey` likewise: no challenge and no proof, as Humanos signs for
+  the agent.
+- `VerifyInput.pop` and `ReportOutcomeInput.pop` are optional: a `GuardVerifier` of your own now reads `pop` as
+  `string | undefined`. `McpGuardVerifier` sends no `pop` field when there is none.
+- `createTestVerifier` without `agentKey`: calls with no proof are decided as the connector decides them under an
+  agent key, and one with a proof is `pop_invalid`. With `agentKey`, a call with no proof throws, as the connector
+  refuses it.
+
 ## 0.4.2
 
 The version stays on 0.4.x until the spec has a new version.

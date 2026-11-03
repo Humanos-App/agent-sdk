@@ -3,7 +3,7 @@ import { createRegChallengeStore, registerAgentKey, registerChallenge } from '@h
 import type { ViaMcpClient } from '../src/mcp/client.js';
 import { DECLARE_TOOLS_MAX, type DeclaredTool } from '../src/mcp/declare.js';
 import { McpVerifierError } from '../src/mcp/guard-verifier.js';
-import { registerAgent } from '../src/mcp/register.js';
+import { humanosHoldsKey, registerAgent } from '../src/mcp/register.js';
 import { softwareKey } from '../src/key-provider.js';
 
 const AUD = 'did:web:humanos.tech';
@@ -27,6 +27,11 @@ function platform(refuse: Partial<Record<'register_challenge' | 'register', stri
       if (tool === 'register_challenge') {
         const { regNonce } = await registerChallenge({ store });
         return { text: JSON.stringify({ regNonce, aud: AUD }), isError: false };
+      }
+      // No key: the platform mints one and holds it (v0.3 §16.14).
+      if (!args.publicKeyJwk) {
+        const answer = { did: DID, keyId: `${DID}#key-1`, granted: { assurance: 'pop', binding: 'custodial' }, custody: 'platform', bootstrapAnchor: 'api_key', existing: false };
+        return { text: JSON.stringify(answer), isError: false };
       }
       const res = await registerAgentKey(
         { cnf: { jwk: args.publicKeyJwk as never }, evidence: args.evidence as never, regNonce: args.regNonce as string },
@@ -80,5 +85,40 @@ describe('registerAgent', () => {
     const many = Array.from({ length: DECLARE_TOOLS_MAX + 1 }, (_, i) => tool(`t${i}`));
     await expect(registerAgent(p.client, await softwareKey(), { tools: many })).rejects.toThrow(RangeError);
     expect(p.calls).toHaveLength(0);
+  });
+});
+
+describe('registerAgent with humanosHoldsKey (v0.3 §16.14)', () => {
+  it('registers with no key and no challenge: Humanos mints and holds it', async () => {
+    const p = platform();
+
+    const registered = await registerAgent(p.client, humanosHoldsKey);
+
+    expect(p.calls).toEqual([{ tool: 'register', args: {} }]);
+    expect(registered).toMatchObject({ did: DID, granted: { assurance: 'pop', binding: 'custodial' }, custody: 'platform', existing: false });
+  });
+
+  it('sends the tools with it', async () => {
+    const p = platform();
+    await registerAgent(p.client, humanosHoldsKey, { tools: [tool('post')] });
+    expect(p.calls).toEqual([{ tool: 'register', args: { tools: [{ name: 'post', service: 'Slack' }] } }]);
+  });
+
+  it("throws the platform's refusal: the organization's own API key cannot register an agent with no key", async () => {
+    const p = platform({ register: "custodial_needs_agent_key: the organization's API key registers an agent that holds its own key" });
+    await expect(registerAgent(p.client, humanosHoldsKey)).rejects.toThrow(/custodial_needs_agent_key/);
+  });
+
+  // @invariant a key left out is an error, never an agent whose key Humanos holds.
+  it.each([undefined, null, {}, { publicJwk: {} }])('refuses %o in place of a key, and calls nothing', async (key) => {
+    const p = platform();
+    await expect(registerAgent(p.client, key as never)).rejects.toThrow(/humanosHoldsKey/);
+    expect(p.calls).toHaveLength(0);
+  });
+
+  it('knows humanosHoldsKey by its shape, so a second copy of the package still means it', async () => {
+    const p = platform();
+    await registerAgent(p.client, { heldBy: 'humanos' });
+    expect(p.calls.map((c) => c.tool)).toEqual(['register']);
   });
 });

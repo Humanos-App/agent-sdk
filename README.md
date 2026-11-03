@@ -15,13 +15,13 @@ For complete, runnable agents built on it, see
 
 | | |
 |---|---|
-| **Keys** — `storedSoftwareKey`, `softwareKey`, `deviceSelfKey`, `custodialKey`, `attestedKey` | where the agent's key lives, and the evidence Humanos grades it on (v0.3 §16). `storedSoftwareKey` keeps the key in a file across restarts; `softwareKey` lasts only as long as the process |
+| **Keys** — `storedSoftwareKey`, `softwareKey`, `deviceSelfKey`, `custodialKey`, `attestedKey`, `humanosHoldsKey` | where the agent's key lives, and the evidence Humanos grades it on (v0.3 §16). `storedSoftwareKey` keeps the key in a file across restarts; `softwareKey` lasts only as long as the process; `humanosHoldsKey` has Humanos hold it |
 | **`ViaGuard`** | the gate around every tool call: the mandate it presents, if any → challenge → proof of possession → verify → run or refuse → report the outcome |
-| **`createViaMcpClient`** | the Humanos connector, authenticated with the organization's API key and signing secret |
+| **`createViaMcpClient`** | the Humanos connector, authenticated with an API key and its signing secret: the organization's, or an agent key issued for one agent |
 | **`McpGuardVerifier`**, **`policyMandates`** | the connector as the guard's verifier, and the mandate each call presents, from the policy (`getPolicy`) and the mandates held (`getMandates`) |
 | **`requestMandate`**, **`waitForMandate`** | ask a person for a mandate a tool needs, under a control `getAction` describes or as a one-call authorization, and wait for their answer (`mandateStatus`) |
 | **`startViaMcpProxy`** | a governing proxy in front of MCP servers you did not write; `refresh()` declares their new tools |
-| **`registerAgent`** | register the agent's key with the organization, and optionally its tools; Humanos grades how the key is held and answers the agent's DID |
+| **`registerAgent`** | register the agent's key with the organization, and optionally its tools; Humanos grades how the key is held and answers the agent's DID. With `humanosHoldsKey`, Humanos mints the key and holds it |
 | **`declareTools`** | tell Humanos which tools an agent can call, each as its server describes it, one call per service |
 | **`startViaMcpServer`** | expose a guarded agent's tools to an MCP host |
 | **`extractFromToolsList`**, **`importActionDraft`** | turn an existing tool surface into a draft action for the organization |
@@ -76,6 +76,35 @@ try {
   else throw e;
 }
 ```
+
+### When the agent has no safe place for a key
+
+An agent with no secure hardware, or with nowhere to keep a key file across restarts (a container that starts
+clean), can have Humanos hold its key (v0.3 §16.14). The client then runs on an **agent key**: an API key the
+organization issues for this one agent. The organization's own API key cannot do this, and is refused
+`custodial_needs_agent_key`.
+
+```ts
+import { createViaMcpClient, humanosHoldsKey, McpGuardVerifier, policyMandates, registerAgent, ViaGuard } from '@humanos/agent-sdk';
+
+const client = createViaMcpClient({
+  url: 'https://mcptest.humanos.tech/mcp',
+  apiKey: process.env.HUMANOS_AGENT_KEY!, // an agent key, not the organization's API key
+  signatureSecret: process.env.HUMANOS_AGENT_KEY_SECRET!,
+});
+await client.initialize();
+
+const { did } = await registerAgent(client, humanosHoldsKey); // registering again answers the same DID
+const guard = new ViaGuard({ agentDid: did, verifier: new McpGuardVerifier(client), mandates: policyMandates(client, did) });
+```
+
+- **The guard takes no `agentKey`.** Each call goes without a proof of possession, and Humanos signs for the agent.
+  An agent that holds its own key and leaves it out of the guard is refused.
+- **The agent key is the agent.** Whoever holds it acts as the agent, so keep it as you would the organization's
+  API key.
+- **The choice is for good.** Registering binds the agent key to the agent. An agent that later holds its own key
+  is a new agent, and its mandates stay with this one. That is why `registerAgent` never treats a missing key as
+  "Humanos holds it": `undefined` or anything that is not a key throws before anything reaches Humanos.
 
 ### How a call is decided
 
