@@ -8,11 +8,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { PROXY } from '../harness/agent.js';
-import { scriptedLlm, type FrameworkDriver, type Llm, type RunContext } from '../frameworks/contract.js';
+import { scriptedLlm, scriptedOpenRouter, type FrameworkDriver, type Llm, type RunContext } from '../frameworks/contract.js';
 import { generate } from '../frameworks/drivers/ai-sdk.js';
 import { inCode } from '../frameworks/drivers/claude-agent-sdk.js';
 import { custom } from '../frameworks/drivers/custom.js';
 import { agent as langchainAgent, graph as langgraph } from '../frameworks/drivers/langchain.js';
+import { openrouterGenerate } from '../frameworks/drivers/openrouter.js';
 import { startModelServer } from '../harness/model-server.js';
 import { LIVE_SERVICE, liveAgent, liveConfig, liveTools, preflight, type LiveAgent } from './live.js';
 
@@ -34,8 +35,12 @@ describe.skipIf(!cfg)('live: a real platform', () => {
     // The scripted model asks for exactly this call; a real one is asked to in words.
     const scripted = cfg!.anthropicKey ? undefined : await startModelServer([{ calls: [{ name: tool, input }] }]);
     const llm: Llm = scripted ? scriptedLlm(scripted) : { baseURL: 'https://api.anthropic.com', apiKey: cfg!.anthropicKey!, model: cfg!.model };
+    const openrouter: Llm | undefined = scripted
+      ? scriptedOpenRouter(scripted)
+      : cfg!.openrouter && { baseURL: 'https://openrouter.ai/api/v1', apiKey: cfg!.openrouter.apiKey, model: cfg!.openrouter.model };
     const ctx: RunContext = {
       llm,
+      ...(openrouter ? { openrouter } : {}),
       via: live.via,
       service: LIVE_SERVICE,
       tools,
@@ -50,8 +55,11 @@ describe.skipIf(!cfg)('live: a real platform', () => {
     return { ran, verdict: live.verdicts().find((v) => v.tool === tool), recorded: live.recorded() };
   };
 
-  for (const driver of [custom, generate, langchainAgent, langgraph, inCode]) {
-    describe(driver.name, () => {
+  // OpenRouter on a real model needs its own key; on the scripted model it runs like the rest.
+  const openrouterReady = !!cfg && (!cfg.anthropicKey || !!cfg.openrouter);
+  for (const driver of [custom, generate, langchainAgent, langgraph, inCode, openrouterGenerate]) {
+    const skipped = driver === openrouterGenerate && !openrouterReady;
+    describe.skipIf(skipped)(skipped ? `${driver.name} (skipped: set OPENROUTER_API_KEY)` : driver.name, () => {
       it('Allow: the call runs, and the platform records its outcome', async () => {
         const { ran, verdict, recorded } = await ask(driver, 'lookup_order', { order_id: 'A-1' });
         expect(verdict).toEqual({ tool: 'lookup_order', decision: 'allow' });
