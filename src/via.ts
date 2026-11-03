@@ -14,7 +14,7 @@ import { ViaGuard } from './guard.js';
 import { softwareKeyFromJson, storedSoftwareKey, type StoredKey, type ViaAgentKey } from './key-provider.js';
 import { createViaMcpClient, type ViaMcpClient } from './mcp/client.js';
 import { McpGuardVerifier, policyMandates } from './mcp/guard-verifier.js';
-import { registerAgent } from './mcp/register.js';
+import { registerAgent, type RegisteredAgent } from './mcp/register.js';
 import { ToolRegistry } from './mcp/tool-registry.js';
 import { createViaMcp, type ViaMcp } from './mcp/transport.js';
 
@@ -48,6 +48,8 @@ export interface Via {
   tools: ToolRegistry;
   /** MCP connections through Humanos: the connection wrapper, which tools it checks, and stdio routing. */
   mcp: ViaMcp;
+  /** What registering answered, when this call registered the key (it had no DID yet). */
+  registration?: RegisteredAgent;
 }
 
 let fromEnvironment: Promise<Via> | undefined;
@@ -70,7 +72,7 @@ async function build(options: ViaOptions): Promise<Via> {
   const env = options.env ?? environment(cwd);
   const client = options.client ?? (await connect(env));
   const key = options.key ?? (await agentKey(env, cwd, options.dir));
-  const did = await didOf(client, key);
+  const { did, registration } = await didOf(client, key);
   const guard = new ViaGuard({
     agentKey: key,
     agentDid: did,
@@ -80,7 +82,7 @@ async function build(options: ViaOptions): Promise<Via> {
   });
   const warnings = options.onWarning ? { onWarning: options.onWarning } : {};
   const tools = new ToolRegistry(client, did, warnings);
-  return { client, key, did, guard, tools, mcp: createViaMcp({ guard, tools, ...warnings }) };
+  return { client, key, did, guard, tools, mcp: createViaMcp({ guard, tools, ...warnings }), ...(registration ? { registration } : {}) };
 }
 
 /** The process environment over `.env`. */
@@ -113,12 +115,12 @@ export function agentDir(env: Record<string, string | undefined>, cwd: string = 
 }
 
 /** The DID kept with the key, else the one registering it gives: the same key always answers the same DID. */
-async function didOf(client: ViaMcpClient, key: ViaAgentKey): Promise<string> {
+async function didOf(client: ViaMcpClient, key: ViaAgentKey): Promise<{ did: string; registration?: RegisteredAgent }> {
   const kept = isKept(key) ? key.did : undefined;
-  if (kept) return kept;
-  const { did } = await registerAgent(client, key);
-  if (isKept(key)) key.save(did);
-  return did;
+  if (kept) return { did: kept };
+  const registration = await registerAgent(client, key);
+  if (isKept(key)) key.save(registration.did);
+  return { did: registration.did, registration };
 }
 
 function isKept(key: ViaAgentKey): key is StoredKey {
