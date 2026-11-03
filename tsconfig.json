@@ -11,5 +11,7 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src", "test"]
+  "include": ["src", "test"],
+  // The framework tests need their frameworks, installed in test/frameworks: `npm run check-types:frameworks`.
+  "exclude": ["test/frameworks"]
 }
