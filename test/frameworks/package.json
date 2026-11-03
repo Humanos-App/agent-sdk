@@ -4,6 +4,9 @@
   "type": "module",
   "description": "Frameworks too heavy for the package's own devDependencies (Claude Agent SDK ships its engine as a native binary): `npm ci` here before `npm run test:frameworks` at the root. Peers resolve from the root (.npmrc), so there is one copy of each.",
   "devDependencies": {
-    "@anthropic-ai/claude-agent-sdk": "0.3.317"
+    "@anthropic-ai/claude-agent-sdk": "0.3.317",
+    "@cloudflare/workers-types": "^5.20261103.1",
+    "agents": "^0.33.0",
+    "wrangler": "^4.157.0"
   }
 }
