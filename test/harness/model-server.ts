@@ -38,9 +38,14 @@ export async function startModelServer(steps: Step[]): Promise<ModelServer> {
   const requests: ModelRequest[] = [];
   let ids = 0;
 
+  // A framework may expose a tool under a longer name (`mcp__support__lookup_order`, `orders_lookup_order`): the script
+  // names the tool, and the call goes out under the name the request offered it as.
+  const exposed = (req: ModelRequest, name: string): string =>
+    req.tools.find((t) => t.name === name)?.name ?? req.tools.find((t) => t.name.endsWith(`__${name}`) || t.name.endsWith(`_${name}`))?.name ?? name;
+
   const blocksFor = (req: ModelRequest): Block[] => {
     const step = steps[req.messages.filter((m) => m.role === 'assistant').length];
-    if (step && 'calls' in step) return step.calls.map((c) => ({ type: 'tool_use', id: `toolu_${++ids}`, name: c.name, input: c.input }));
+    if (step && 'calls' in step) return step.calls.map((c) => ({ type: 'tool_use', id: `toolu_${++ids}`, name: exposed(req, c.name), input: c.input }));
     if (step) return [{ type: 'text', text: step.text }];
     const last = req.messages[req.messages.length - 1];
     const results = Array.isArray(last?.content) ? (last.content as { type: string; content?: unknown }[]).filter((c) => c.type === 'tool_result') : [];

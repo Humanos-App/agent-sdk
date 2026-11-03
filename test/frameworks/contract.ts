@@ -51,7 +51,11 @@ export interface FrameworkDriver {
   run(ctx: RunContext): Promise<void>;
   /** Its HTTP MCP calls go through `via.mcp.transport`, so an allowed one carries the call proof. */
   callProofOverHttp?: boolean;
+  /** Scenarios this way of running cannot meet, by id, each with why (shown in the test's name). */
+  skip?: Partial<Record<ScenarioId, string>>;
 }
+
+export type ScenarioId = 'declare' | 'allow' | 'deny' | 'tool-error' | 'delegate' | 'parallel' | 'down' | 'mcp-stdio' | 'mcp-http';
 
 const SERVICE = 'Support desk';
 const ORDERS = 'Orders';
@@ -130,8 +134,12 @@ const LOOKUP = call('lookup_order', { order_id: 'A-1' });
 const REFUND = call('issue_refund', { order_id: 'A-1', amount_eur: 40 });
 
 export function runContract(driver: FrameworkDriver): void {
+  const scenario = (id: ScenarioId, title: string, fn: () => Promise<void>) => {
+    const why = driver.skip?.[id];
+    return why ? it.skip(`${title} (skipped: ${why})`, fn) : it(title, fn);
+  };
   describe(`${driver.name}: the contract`, () => {
-    it('declares every tool once per service, with its JSON Schema', async () => {
+    scenario('declare', 'declares every tool once per service, with its JSON Schema', async () => {
       const { scene } = await play(driver, { policy: {}, steps: [{ calls: [LOOKUP] }] });
       const declared = scene.humanos.declared.filter((d) => d.services.includes(SERVICE));
       expect(declared.length).toBeGreaterThan(0);
@@ -140,7 +148,7 @@ export function runContract(driver: FrameworkDriver): void {
       expect(last.find((t) => t.name === 'issue_refund')).toMatchObject({ service: SERVICE, inputSchema: { properties: { amount_eur: { type: 'number' } } } });
     });
 
-    it('allow: the tool runs, its outcome is reported, and the model gets its result', async () => {
+    scenario('allow', 'allow: the tool runs, its outcome is reported, and the model gets its result', async () => {
       const { scene, ran, results } = await play(driver, { policy: { lookup_order: 'allow' }, steps: [{ calls: [LOOKUP] }] });
       expect(ran).toEqual([{ tool: 'lookup_order', args: { order_id: 'A-1' } }]);
       expect(scene.decisions).toMatchObject([{ tool: 'lookup_order', decision: 'allow' }]);
@@ -148,7 +156,7 @@ export function runContract(driver: FrameworkDriver): void {
       expect(results[0]!.text).toContain('A-1');
     });
 
-    it('deny: the tool never runs, nothing is reported, and the model is told why', async () => {
+    scenario('deny', 'deny: the tool never runs, nothing is reported, and the model is told why', async () => {
       const { scene, ran, results } = await play(driver, { policy: { issue_refund: 'deny' }, steps: [{ calls: [REFUND] }] });
       expect(ran).toEqual([]);
       expect(scene.decisions).toMatchObject([{ tool: 'issue_refund', decision: 'deny', reason: 'policy_denied' }]);
@@ -156,20 +164,20 @@ export function runContract(driver: FrameworkDriver): void {
       expect(told(results[0]!.text, 'policy_denied')).toBe(true);
     });
 
-    it('a tool error is reported as failed, and the model sees the error', async () => {
+    scenario('tool-error', 'a tool error is reported as failed, and the model sees the error', async () => {
       const { scene, results } = await play(driver, { policy: { lookup_order: 'allow' }, steps: [{ calls: [LOOKUP] }], local: { failing: ['lookup_order'] } });
       expect(scene.outcomes).toEqual([{ decisionEventId: scene.decisions[0]!.eventId, outcome: 'failed', error: 'order store down' }]);
       expect(results[0]!.text).toContain('order store down');
     });
 
-    it('Delegate: refused mandate_required while no mandate covers it', async () => {
+    scenario('delegate', 'Delegate: refused mandate_required while no mandate covers it', async () => {
       const { scene, ran, results } = await play(driver, { policy: { issue_refund: 'mandate' }, steps: [{ calls: [REFUND] }] });
       expect(ran).toEqual([]);
       expect(scene.decisions).toMatchObject([{ tool: 'issue_refund', decision: 'deny', reason: 'mandate_required' }]);
       expect(told(results[0]!.text, 'mandate_required')).toBe(true);
     });
 
-    it('calls in one step each get their own decision, settled against it', async () => {
+    scenario('parallel', 'calls in one step each get their own decision, settled against it', async () => {
       const { scene, ran } = await play(driver, {
         policy: { lookup_order: 'allow' },
         steps: [{ calls: [call('lookup_order', { order_id: 'A-1' }), call('lookup_order', { order_id: 'A-2' })] }],
@@ -179,13 +187,13 @@ export function runContract(driver: FrameworkDriver): void {
       expect(new Set(scene.outcomes.map((o) => o.decisionEventId))).toEqual(new Set(scene.decisions.map((d) => d.eventId)));
     });
 
-    it('Humanos unreachable: the tool never runs', async () => {
+    scenario('down', 'Humanos unreachable: the tool never runs', async () => {
       const { ran, scene } = await play(driver, { policy: { lookup_order: 'allow' }, steps: [{ calls: [LOOKUP] }], before: (s) => (s.humanos.down = true) });
       expect(ran).toEqual([]);
       expect(scene.outcomes).toEqual([]);
     });
 
-    it('MCP over stdio, routed through the proxy: each call checked once, the refused one never reaches the server', async () => {
+    scenario('mcp-stdio', 'MCP over stdio, routed through the proxy: each call checked once, the refused one never reaches the server', async () => {
       const stdio = stdioSupportServer();
       const { scene, results } = await play(driver, { policy: { lookup_order: 'allow', issue_refund: 'deny' }, steps: [{ calls: [LOOKUP, REFUND] }], local: false, stdio });
       expect(scene.decisions.map((d) => [d.tool, d.decision]).sort()).toEqual([['issue_refund', 'deny'], ['lookup_order', 'allow']]);
@@ -195,7 +203,7 @@ export function runContract(driver: FrameworkDriver): void {
       expect(results.some((r) => told(r.text, 'policy_denied'))).toBe(true);
     });
 
-    it('MCP over HTTP: each call checked once, the refused one never reaches the server', async () => {
+    scenario('mcp-http', 'MCP over HTTP: each call checked once, the refused one never reaches the server', async () => {
       const http = await httpSupportServer();
       const { scene } = await play(driver, {
         policy: { lookup_order: 'allow', issue_refund: 'deny' },
