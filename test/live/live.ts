@@ -12,7 +12,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import * as util from 'node:util';
+import { parseEnv } from 'node:util';
 import { createViaMcpClient, type ViaMcpClient } from '../../src/mcp/client.js';
 import { getPolicy } from '../../src/mcp/guard-verifier.js';
 import { via, type Via } from '../../src/via.js';
@@ -37,8 +37,7 @@ const here = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
 export function liveConfig(): LiveConfig | undefined {
   const file = here('./.env');
-  const parseEnv = (util as { parseEnv?: (c: string) => Record<string, string> }).parseEnv;
-  const env = { ...(parseEnv && existsSync(file) ? parseEnv(readFileSync(file, 'utf8')) : {}), ...process.env };
+  const env = { ...(existsSync(file) ? (parseEnv(readFileSync(file, 'utf8')) as Record<string, string>) : {}), ...process.env };
   const { HUMANOS_LIVE_API_KEY: apiKey, HUMANOS_LIVE_SIGNATURE_SECRET: signatureSecret, ANTHROPIC_API_KEY: anthropicKey } = env;
   if (!apiKey || !signatureSecret || !anthropicKey) return undefined;
   return {

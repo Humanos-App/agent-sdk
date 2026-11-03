@@ -9,7 +9,7 @@
  */
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import * as util from 'node:util';
+import { parseEnv } from 'node:util';
 import { ViaGuard } from './guard.js';
 import { softwareKeyFromJson, storedSoftwareKey, type StoredKey, type ViaAgentKey } from './key-provider.js';
 import { createViaMcpClient, type ViaMcpClient } from './mcp/client.js';
@@ -83,11 +83,10 @@ async function build(options: ViaOptions): Promise<Via> {
   return { client, key, did, guard, tools, mcp: createViaMcp({ guard, tools, ...warnings }) };
 }
 
-/** The process environment over `.env`. `util.parseEnv` is Node 20.12 and later; before it, only the environment. */
+/** The process environment over `.env`. */
 export function environment(cwd: string = process.cwd()): Record<string, string | undefined> {
   const file = resolve(cwd, '.env');
-  const parseEnv = (util as { parseEnv?: (content: string) => Record<string, string> }).parseEnv;
-  const fromFile = parseEnv && existsSync(file) ? parseEnv(readFileSync(file, 'utf8')) : {};
+  const fromFile = existsSync(file) ? (parseEnv(readFileSync(file, 'utf8')) as Record<string, string>) : {};
   return { ...fromFile, ...process.env };
 }
 
