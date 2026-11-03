@@ -200,8 +200,8 @@ npm run build     # dist/: ES modules + type declarations
 The framework tests run each adapter inside its real framework: the framework's own agent loop and Anthropic
 provider against a scripted model server, a fake Humanos connector deciding on a test policy, and real MCP servers
 (stdio and HTTP). Every framework passes the same contract (`test/frameworks/contract.ts`). Their frameworks are
-devDependencies, except Claude Agent SDK, whose engine is a native binary: it installs apart, so `npm ci` stays
-light:
+devDependencies, except the heavy test-only ones (Claude Agent SDK's native engine, and wrangler with Cloudflare
+Agents, which run a Worker in workerd): they install apart, so `npm ci` stays light:
 
 ```
 (cd test/frameworks && npm ci)
