@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createRegChallengeStore, registerAgentKey, registerChallenge } from '@humanos/via-sdk-v03';
+import { createRegChallengeStore, registerAgentKey, registerChallenge } from '@humanos-ai/via-sdk';
 import type { ViaMcpClient } from '../src/mcp/client.js';
 import { via } from '../src/via.js';
 

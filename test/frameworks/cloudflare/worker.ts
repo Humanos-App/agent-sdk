@@ -1,5 +1,5 @@
 /**
- * A Cloudflare Agent (`agents`, a Durable Object) whose tools go through `@humanos/agent-sdk/ai-sdk`, run by the Workers
+ * A Cloudflare Agent (`agents`, a Durable Object) whose tools go through `@humanos-ai/agent-sdk/ai-sdk`, run by the Workers
  * runtime itself (workerd, through wrangler) in the framework tests.
  *
  * A Worker has no disk and no `.env`: the agent's Humanos comes from its bindings, the connector's credentials and the

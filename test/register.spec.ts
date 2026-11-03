@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createRegChallengeStore, registerAgentKey, registerChallenge } from '@humanos/via-sdk-v03';
+import { createRegChallengeStore, registerAgentKey, registerChallenge } from '@humanos-ai/via-sdk';
 import type { ViaMcpClient } from '../src/mcp/client.js';
 import { DECLARE_TOOLS_MAX, type DeclaredTool } from '../src/mcp/declare.js';
 import { McpVerifierError } from '../src/mcp/guard-verifier.js';

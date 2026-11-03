@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createRegChallengeStore, registerAgentKey, registerChallenge } from '@humanos/via-sdk-v03';
+import { createRegChallengeStore, registerAgentKey, registerChallenge } from '@humanos-ai/via-sdk';
 import { ViaGuard } from '../src/guard.js';
 import { softwareKeyFromJson, storedSoftwareKey } from '../src/key-provider.js';
 import { createTestVerifier } from '../src/testing.js';

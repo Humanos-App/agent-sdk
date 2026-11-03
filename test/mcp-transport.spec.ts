@@ -1,4 +1,4 @@
-import { AGENT_RECORD_META_KEY, CALL_PROOF_META_KEY } from '@humanos/via-sdk-v03';
+import { AGENT_RECORD_META_KEY, CALL_PROOF_META_KEY } from '@humanos-ai/via-sdk';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';

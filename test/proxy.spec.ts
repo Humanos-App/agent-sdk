@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { softwareKey } from '../src/key-provider.js';
 import { evaluateRules, unwrapUserParamValues } from '../src/sdk.js';
 import type { ViaMcpClient } from '../src/mcp/client.js';
-import { AGENT_RECORD_HEADER, AGENT_RECORD_META_KEY, CALL_PROOF_HEADER, CALL_PROOF_META_KEY } from '@humanos/via-sdk-v03';
+import { AGENT_RECORD_HEADER, AGENT_RECORD_META_KEY, CALL_PROOF_HEADER, CALL_PROOF_META_KEY } from '@humanos-ai/via-sdk';
 import { callProofExtra, declaredParams, pickMandate, startViaMcpProxy, type ViaMcpProxyConfig } from '../src/mcp/proxy.js';
 import type { JsonRpcMessage } from '../src/mcp/server.js';
 import { connectUpstream, inProcessUpstream, type Upstream, type UpstreamTool } from '../src/mcp/upstream.js';

@@ -9,7 +9,7 @@ import type { McpServerSpec } from '../../src/mcp/upstream.js';
 import { defaultPlainReason } from '../../src/mcp/server.js';
 import type { TestAccess } from '../../src/testing.js';
 import type { Via } from '../../src/via.js';
-import { CALL_PROOF_META_KEY } from '@humanos/via-sdk-v03';
+import { CALL_PROOF_META_KEY } from '@humanos-ai/via-sdk';
 import { agentScene, PROXY, type AgentScene } from '../harness/agent.js';
 import { httpSupportServer, stdioSupportServer } from '../harness/mcp-servers.js';
 import { startModelServer, type ModelServer, type Step } from '../harness/model-server.js';
