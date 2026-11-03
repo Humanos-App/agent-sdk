@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.4.2
 
-Next released as 0.4.2: the version stays on 0.4.x until the spec has a new version.
+The version stays on 0.4.x until the spec has a new version.
 
 - `registerAgent(client, key, { tools? })`: the connector's `register_challenge` and `register`, the key's evidence
   bound to the nonce; answers the agent's DID, the rung Humanos granted, and `existing` for a key already registered.
