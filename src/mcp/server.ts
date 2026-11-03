@@ -1,5 +1,5 @@
 /**
- * THE VIA-GOVERNED MCP CONNECTOR — `@humanos/agent-sdk`'s go-to-market wedge.
+ * THE VIA-GOVERNED MCP CONNECTOR — `@humanos-ai/agent-sdk`'s go-to-market wedge.
  *
  * Apps that speak MCP (Claude Desktop, Claude.ai connectors, Cursor, …) point at
  * THIS server and every tool call they make is verified against a mandate before

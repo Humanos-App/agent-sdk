@@ -1,5 +1,5 @@
 /**
- * LANGCHAIN — `@humanos/agent-sdk/langchain`, for LangChain 1.x agents (`createAgent`) and LangGraph graphs.
+ * LANGCHAIN — `@humanos-ai/agent-sdk/langchain`, for LangChain 1.x agents (`createAgent`) and LangGraph graphs.
  *
  * `gate()` is middleware for `createAgent({ middleware })`: `wrapToolCall` checks every tool call, the ones it loaded
  * from MCP servers included, and settles it from the `ToolMessage` the tool answered; a refused call never runs and

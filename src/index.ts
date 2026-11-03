@@ -1,5 +1,5 @@
 /**
- * `@humanos/agent-sdk` — what an agent builder installs.
+ * `@humanos-ai/agent-sdk` — what an agent builder installs.
  *
  * The VIA protocol (credentials, events, verification) lives in the VIA SDK;
  * this package is the AGENT SIDE of the wire: hold a key (provably — §16.5
