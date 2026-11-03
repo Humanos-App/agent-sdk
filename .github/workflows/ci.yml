@@ -23,17 +23,36 @@ jobs:
       - run: npm run check-types
       - run: npm test
 
-  # Every adapter in its real framework, against the scripted model and the fake connector (test/harness). The
-  # frameworks are installed apart (test/frameworks/package.json), so the job above stays light.
+  # Every adapter in its real framework, against the scripted model and the fake connector (test/harness), at the
+  # versions the lockfiles hold and at the lowest each adapter supports. Claude Agent SDK installs apart
+  # (test/frameworks/package.json): its engine is a native binary.
   frameworks:
+    name: frameworks (${{ matrix.name }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: latest
+          - name: lowest
+            root: ai@5.0.0 @ai-sdk/anthropic@2.0.0 @ai-sdk/mcp@0.0.43 langchain@1.0.1 @langchain/core@1.0.1 @langchain/langgraph@1.0.0 @langchain/langgraph-checkpoint@1.0.0 @langchain/anthropic@1.0.0 @langchain/mcp-adapters@1.0.0
+            claude: "@anthropic-ai/claude-agent-sdk@0.3.142"
+          - name: ai-sdk-6
+            root: ai@6.0.0 @ai-sdk/anthropic@3.0.0 @ai-sdk/mcp@1.0.0
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm ci
+      - if: matrix.root
+        run: npm install --no-save --legacy-peer-deps ${{ matrix.root }}
       - run: npm ci
         working-directory: test/frameworks
-      - run: npm run check-types:frameworks
+      - if: matrix.claude
+        run: npm install --no-save ${{ matrix.claude }}
+        working-directory: test/frameworks
+      # The drivers are written against the latest APIs; at older versions only their behaviour is checked.
+      - if: matrix.name == 'latest'
+        run: npm run check-types:frameworks
       - run: npm run test:frameworks

@@ -52,6 +52,9 @@
   the dev platform. Its preflight declares the live tools and, until the test organization's policy gives them
   Allow, Deny and Delegate, fails naming what to set in the dashboard. Each framework: an allowed call runs and its
   outcome is recorded, a denied one never runs, a Delegate one is refused `mandate_required`.
+- Tested at each adapter's lowest version too (a CI matrix: latest, lowest, AI SDK 6): AI SDK 5.0.0, 6.0.0 and 7;
+  LangChain `langchain` 1.0.1 with `@langchain/core` 1.0.1; Claude Agent SDK 0.3.142 and 0.3.317. The LangChain peers
+  are `^1.0.1`, the lowest that installs consistently.
 - Framework tests (`npm run test:frameworks`, a CI job of its own): a scripted Anthropic model server, a fake
   connector on `createTestVerifier` (in process, and on HTTP with the request signature checked), the support desk's
   MCP server over stdio and HTTP, and the contract every framework driver must pass. The first driver is an agent
