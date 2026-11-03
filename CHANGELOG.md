@@ -19,6 +19,13 @@
   the governing proxy, as the project's own agent (`via()`). The package now has a `bin`.
 - `McpServerSpec`: the one type an MCP server is named with; `UpstreamSpec` stays as its alias. The proxy's refusal
   text moved to `refusalText`, shared with the connection wrapper.
+- `@humanos/agent-sdk/ai-sdk`: `aiSdk(via?)`. `guard(tools, service)` hands a `ToolSet` back with each `execute`
+  checked, run and settled (a refusal throws, and AI SDK gives the model the error); it declares the tools, their
+  schemas through AI SDK's `asSchema`. A tool with no `execute`, or one a wrapped connection or routed service
+  checks, is left as it is. `ai` is an optional peer (>=5). Passes the contract through `generateText` and
+  `streamText`, with MCP over `@ai-sdk/mcp`.
+- `via().mcp.route(spec, via?)` remembers the service it routed, and `checks` answers true for its tools.
+- `via({ cwd })`: the project `.env` and `.humanos` are read from.
 - Framework tests (`npm run test:frameworks`, a CI job of its own): a scripted Anthropic model server, a fake
   connector on `createTestVerifier` (in process, and on HTTP with the request signature checked), the support desk's
   MCP server over stdio and HTTP, and the contract every framework driver must pass. The first driver is an agent

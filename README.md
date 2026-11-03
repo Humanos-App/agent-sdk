@@ -25,6 +25,7 @@ For complete, runnable agents built on it, see
 | **`@humanos/agent-sdk/mcp`**, **`via().mcp`** | the connection wrapper: an MCP client transport with every `tools/list` declared and every `tools/call` checked, the proxy inside the agent's process; `routeStdio` puts a stdio server entry behind the proxy, which `humanos-agent proxy` runs |
 | **`registerAgent`** | register the agent's key with the organization, and optionally its tools; Humanos grades how the key is held and answers the agent's DID |
 | **`declareTools`** | tell Humanos which tools an agent can call, each as its server describes it, one call per service |
+| **`@humanos/agent-sdk/ai-sdk`** — `aiSdk()` | Vercel AI SDK 5 and later (so Cloudflare Agents and OpenRouter as a provider): `guard(tools, service)` gives the `ToolSet` back with each `execute` verified first, and declares the tools with their JSON Schema |
 | **`ToolRegistry`** | every tool a process hands its adapters, declared as one list per service, again only when a service's list changes |
 | **`startViaMcpServer`** | expose a guarded agent's tools to an MCP host |
 | **`extractFromToolsList`**, **`importActionDraft`** | turn an existing tool surface into a draft action for the organization |
