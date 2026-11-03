@@ -53,10 +53,10 @@
   },
   "peerDependencies": {
     "@humanos/via-sdk-v03": "^0.8.0",
+    "@langchain/core": "^1.0.1",
     "ai": ">=5",
-    "zod": "^4.0.0",
     "langchain": "^1.0.1",
-    "@langchain/core": "^1.0.1"
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "@ai-sdk/anthropic": "^4.0.96",
@@ -68,6 +68,7 @@
     "@langchain/langgraph": "^1.6.0",
     "@langchain/mcp-adapters": "^2.0.2",
     "@modelcontextprotocol/sdk": "^1.32.2",
+    "@openrouter/ai-sdk-provider": "^3.1.0",
     "@types/node": "^22.20.0",
     "ai": "^7.0.162",
     "langchain": "^1.6.1",

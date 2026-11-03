@@ -6,7 +6,8 @@
  * `HUMANOS_LIVE_API_KEY` and `HUMANOS_LIVE_SIGNATURE_SECRET` (the test organization's API key), and optionally
  * `HUMANOS_LIVE_MCP_URL` (default dev; a local stack: `http://localhost:4005/mcp`), `ANTHROPIC_API_KEY` (a real
  * model; without it the scripted model plays it, so the run is free and the same each time), `HUMANOS_LIVE_MODEL`
- * (default Claude Haiku, or `scripted`), `HUMANOS_LIVE_AGENT_KEY` (the agent's key file content, for CI; else
+ * (default Claude Haiku, or `scripted`), `OPENROUTER_API_KEY` (the OpenRouter driver on a real model;
+ * `HUMANOS_LIVE_OPENROUTER_MODEL`, default `anthropic/claude-haiku-5.5`), `HUMANOS_LIVE_AGENT_KEY` (the agent's key file content, for CI; else
  * `test/live/.humanos/<connector host>/agent-key.json`, one agent per platform).
  *
  * What the platform answered is read from the connector calls the agent made (`verify`, `report_outcome`,
@@ -33,6 +34,8 @@ export interface LiveConfig {
   anthropicKey?: string;
   /** `scripted`, or the real model's name. */
   model: string;
+  /** With a real model: OpenRouter's key and model, for the OpenRouter driver; absent, that driver is skipped. */
+  openrouter?: { apiKey: string; model: string };
   agentKey?: string;
   dir: string;
 }
@@ -52,6 +55,7 @@ export function liveConfig(): LiveConfig | undefined {
     mcpUrl,
     ...(scripted ? {} : { anthropicKey }),
     model: scripted ? 'scripted' : env.HUMANOS_LIVE_MODEL || 'claude-haiku-5-5',
+    ...(!scripted && env.OPENROUTER_API_KEY ? { openrouter: { apiKey: env.OPENROUTER_API_KEY, model: env.HUMANOS_LIVE_OPENROUTER_MODEL || 'anthropic/claude-haiku-5.5' } } : {}),
     ...(env.HUMANOS_LIVE_AGENT_KEY ? { agentKey: env.HUMANOS_LIVE_AGENT_KEY } : {}),
     // One agent per platform: a key registered on one is unknown to another.
     dir: here(`./.humanos/${new URL(mcpUrl).host.replace(/[^A-Za-z0-9.-]/g, '_')}`),

@@ -12,7 +12,7 @@ import { aiSdk } from '../../../src/adapters/ai-sdk.js';
 import type { FrameworkDriver, RunContext } from '../contract.js';
 
 /** The scenario's tools and servers as an AI SDK agent has them; `close` ends the MCP clients. */
-async function toolsFor(ctx: RunContext): Promise<{ tools: ToolSet; close: () => Promise<void> }> {
+export async function toolsFor(ctx: RunContext): Promise<{ tools: ToolSet; close: () => Promise<void> }> {
   const humanos = await aiSdk(ctx.via);
   const own: ToolSet = Object.fromEntries(
     ctx.tools.map((t) => [t.name, tool({ description: t.description, inputSchema: jsonSchema(t.inputSchema as never), execute: (input) => t.execute(input as Record<string, unknown>) })]),

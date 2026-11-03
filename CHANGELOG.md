@@ -54,6 +54,9 @@
   the dev platform. Its preflight declares the live tools and, until the test organization's policy gives them
   Allow, Deny and Delegate, fails naming what to set in the dashboard. Each framework: an allowed call runs and its
   outcome is recorded, a denied one never runs, a Delegate one is refused `mandate_required`.
+- OpenRouter tested as an AI SDK provider (`@openrouter/ai-sdk-provider`): the scripted model also speaks the
+  OpenAI-compatible Chat Completions API, so the contract runs over OpenRouter's wire; the live tier runs it on a real
+  OpenRouter model with `OPENROUTER_API_KEY`.
 - Tested at each adapter's lowest version too (a CI matrix: latest, lowest, AI SDK 6): AI SDK 5.0.0, 6.0.0 and 7;
   LangChain `langchain` 1.0.1 with `@langchain/core` 1.0.1; Claude Agent SDK 0.3.142 and 0.3.317. The LangChain peers
   are `^1.0.1`, the lowest that installs consistently.

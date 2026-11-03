@@ -32,7 +32,10 @@ export interface Llm {
 }
 
 export interface RunContext {
+  /** The Anthropic model, for drivers on an Anthropic provider. */
   llm: Llm;
+  /** The OpenRouter model, for drivers on OpenRouter (its base URL ends in `/api/v1`); absent where there is none. */
+  openrouter?: Llm;
   via: Via;
   /** The service the local tools are declared under. */
   service: string;
@@ -125,6 +128,7 @@ async function play(driver: FrameworkDriver, scenario: {
     let error: unknown;
     await driver.run({
       llm: scriptedLlm(model),
+      openrouter: scriptedOpenRouter(model),
       via: scene.via,
       service: SERVICE,
       tools: local.tools,
@@ -151,6 +155,8 @@ async function play(driver: FrameworkDriver, scenario: {
 
 /** The scripted model as a provider sees it: a test key, and a model name it ignores. */
 export const scriptedLlm = (model: ModelServer): Llm => ({ baseURL: model.url, apiKey: 'sk-ant-local-test', model: 'claude-test' });
+/** The scripted model on its OpenAI-compatible API, where OpenRouter's provider calls it. */
+export const scriptedOpenRouter = (model: ModelServer): Llm => ({ baseURL: `${model.url}/api/v1`, apiKey: 'sk-or-local-test', model: 'anthropic/claude-haiku-5.5' });
 
 const call = (name: string, input: Record<string, unknown>) => ({ name, input });
 const LOOKUP = call('lookup_order', { order_id: 'A-1' });
