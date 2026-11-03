@@ -46,6 +46,9 @@ Requires Node.js 22 or later. The framework adapters load their framework from t
 
 ## Use
 
+Setting it up in Claude Agent SDK, Vercel AI SDK, OpenRouter, LangChain, LangGraph or Cloudflare Agents, with
+`npx humanos-agent init`: [docs/SETUP.md](docs/SETUP.md).
+
 ```ts
 import { createViaMcpClient, McpGuardVerifier, policyMandates, registerAgent, storedSoftwareKey, ViaGuard, ViaDeniedError } from '@humanos-ai/agent-sdk';
 
@@ -210,6 +213,8 @@ Give it a `policy` (`{ tools: { pay: 'mandate', search: 'allow' }, default: 'den
 connector does: the mandate decides only the tools the policy leaves to one.
 
 ## Develop
+
+Every test tier, what it proves and how to run it: [docs/TESTING.md](docs/TESTING.md).
 
 Requires Node.js 22 or later.
 
