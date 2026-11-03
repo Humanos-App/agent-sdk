@@ -63,8 +63,13 @@ export interface MandateSource {
 }
 
 export interface GuardOptions {
-  /** The agent's key PROVIDER — signing is delegated through it, so a KMS/enclave key works unchanged. */
-  agentKey: ViaAgentKey;
+  /**
+   * The agent's key PROVIDER — signing is delegated through it, so a KMS/enclave key works unchanged. Absent when
+   * Humanos holds the agent's key (`registerAgent(client, humanosHoldsKey)`, v0.3 §16.14): each call goes with no
+   * proof, and Humanos signs for the agent under the agent key the verifier's client holds. An agent that holds its
+   * own key and leaves it out is refused by the verifier.
+   */
+  agentKey?: ViaAgentKey;
   /** The agent the calls are for, named on every call (v0.3 §21.4). */
   agentDid: string;
   verifier: GuardVerifier;
@@ -261,36 +266,38 @@ export class ViaGuard {
   /** v0.3 §2.1 — the outcome, under the authority the call was presented with: a fresh challenge, a fresh PoP. */
   private async report(decisionId: string | undefined, mandateId: string | undefined, outcome: AgentOutcomeKind, error?: string): Promise<void> {
     if (!decisionId) return;
-    const { verifier, agentDid } = this.opts;
+    const { verifier, agentDid, agentKey } = this.opts;
+    const reported = { decisionEventId: decisionId, outcome, ...(error ? { error } : {}), now: this.opts.now?.() };
+    // Humanos holds the key: it challenges and signs the report itself.
+    if (!agentKey) {
+      await verifier.reportOutcome({ agentDid, ...(mandateId ? { mandateId } : {}), ...reported });
+      return;
+    }
     const ch = await verifier.challenge({ agentDid, ...(mandateId ? { mandateId } : {}) });
     if ('refused' in ch) return;
     const authority = this.authority(ch, mandateId);
     if (!authority) return;
     const params = outcomeParams(decisionId, outcome, error);
-    const pop = await this.sign(ch, this.hash(authority, 'report_outcome', params));
-    await verifier.reportOutcome({
-      ...authority,
-      decisionEventId: decisionId,
-      outcome,
-      ...(error ? { error } : {}),
-      pop,
-      now: this.opts.now?.(),
-    });
+    const pop = await this.sign(agentKey, ch, this.hash(authority, 'report_outcome', params));
+    await verifier.reportOutcome({ ...authority, ...reported, pop });
   }
 
   /**
    * One presentation: the challenge for the agent (the mandate's when the call presents one), a PoP over the mandate
    * or, with none, the policy the challenge names, and verify. A verifier that names no policy authorizes nothing
-   * without a mandate (v0.3 §21.4).
+   * without a mandate (v0.3 §21.4). When Humanos holds the agent's key, the call names only the mandate: Humanos
+   * challenges, names the policy and signs for the agent itself.
    */
   private async present(tool: string, params: Record<string, unknown>, mandateId?: string, audience?: string): Promise<VerifyOutcome> {
-    const { verifier, agentDid } = this.opts;
+    const { verifier, agentDid, agentKey } = this.opts;
+    const presented = { tool, params, ...(audience ? { audience } : {}), now: this.opts.now?.() };
+    if (!agentKey) return verifier.verify({ agentDid, ...(mandateId ? { mandateId } : {}), ...presented });
     const ch = await verifier.challenge({ agentDid, ...(mandateId ? { mandateId } : {}) });
     if ('refused' in ch) return { decision: 'deny', reason: ch.refused, evaluations: [] };
     const authority = this.authority(ch, mandateId);
     if (!authority) return { decision: 'deny', reason: 'mandate_required', evaluations: [] };
-    const pop = await this.sign(ch, this.hash(authority, tool, params));
-    return verifier.verify({ ...authority, tool, params, pop, ...(audience ? { audience } : {}), now: this.opts.now?.() });
+    const pop = await this.sign(agentKey, ch, this.hash(authority, tool, params));
+    return verifier.verify({ ...authority, ...presented, pop });
   }
 
   /** What the PoP binds: the mandate presented or, with none, the policy the challenge named. */
@@ -305,8 +312,7 @@ export class ViaGuard {
   }
 
   /** A PoP over one call's `action_hash`, signed through the key provider. */
-  private sign(ch: { aud: string; nonce: string }, action_hash: string): Promise<string> {
-    const { agentKey } = this.opts;
+  private sign(agentKey: ViaAgentKey, ch: { aud: string; nonce: string }, action_hash: string): Promise<string> {
     return buildDelegatedPoP(
       {
         cnf: { jkt: jwkThumbprint(agentKey.publicJwk) },

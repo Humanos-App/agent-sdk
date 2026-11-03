@@ -124,3 +124,28 @@ describe('createTestVerifier — with a policy, deciding first (v0.3 §21.3)', (
     expect(t.outcomes).toHaveLength(1);
   });
 });
+
+describe('createTestVerifier with no agentKey — Humanos holds the key (v0.3 §16.14)', () => {
+  it('decides and records calls that carry no PoP, as the connector does under the agent key', async () => {
+    const t = createTestVerifier({ rules, userParams: { limit: 100 } });
+    const guard = new ViaGuard({ mandate: t.mandate, agentDid: AGENT, verifier: t.verifier, compiled: t.compiled });
+
+    expect(await guard.call('pay', { amount: 50 }, () => 'paid')).toMatchObject({ decision: 'allow', result: 'paid' });
+    await expect(guard.call('pay', { amount: 500 }, () => 'paid')).rejects.toMatchObject({ reason: 'rule_failed' });
+    expect(t.decisions.map((d) => d.decision)).toEqual(['allow', 'deny']);
+    expect(t.outcomes).toEqual([{ decisionEventId: t.decisions[0]!.eventId, outcome: 'completed' }]);
+  });
+
+  it('refuses a PoP: the agent holds no key Humanos could check one against', async () => {
+    const t = createTestVerifier({ rules, userParams: { limit: 100 } });
+    const guard = new ViaGuard({ mandate: t.mandate, agentKey: await softwareKey(), agentDid: AGENT, verifier: t.verifier });
+    await expect(guard.call('pay', { amount: 50 }, () => 'paid')).rejects.toMatchObject({ reason: 'pop_invalid' });
+  });
+
+  it('an agent that holds its own key and leaves it out of the guard is refused outright, as the connector refuses it', async () => {
+    const { t } = await setup();
+    const guard = new ViaGuard({ mandate: t.mandate, agentDid: AGENT, verifier: t.verifier });
+    await expect(guard.call('pay', { amount: 50 }, () => 'paid')).rejects.toThrow(/no `pop`/);
+    expect(t.decisions).toHaveLength(0);
+  });
+});

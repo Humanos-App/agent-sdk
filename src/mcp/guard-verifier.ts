@@ -8,6 +8,8 @@
  *  - **`verify` sends the mandate's ID, never the mandate.** The platform is the store; it loads
  *    its own copy, scoped to the organization the API key belongs to. A presented copy would be
  *    redundant at best and, tampered, a thing the verifier would have to distrust anyway.
+ *  - **No `pop` when Humanos holds the agent's key** (v0.3 §16.14): the connector challenges and signs for the agent
+ *    itself, under the agent key the client holds. An agent that holds its own key and sends none is refused.
  *  - **A deny arrives as a RESULT, not a tool error.** The connector answers `verify` with a
  *    `VerifyOutcome` whatever the decision, so the guard consumes it directly. `isError` on
  *    `challenge` / `report_outcome` means the request could not be answered (an agent outside the
@@ -73,7 +75,7 @@ export class McpGuardVerifier implements GuardVerifier {
       ...authorityOf(input),
       tool: input.tool,
       params: input.params,
-      pop: input.pop,
+      ...(input.pop ? { pop: input.pop } : {}),
       ...(input.audience ? { audience: input.audience } : {}),
     });
     if (r.isError) throw new McpVerifierError('verify', r.text);
@@ -87,7 +89,7 @@ export class McpGuardVerifier implements GuardVerifier {
       decisionEventId: input.decisionEventId,
       outcome: input.outcome,
       ...(input.error ? { error: input.error } : {}),
-      pop: input.pop,
+      ...(input.pop ? { pop: input.pop } : {}),
     });
     if (r.isError) throw new McpVerifierError('report_outcome', r.text);
     return parse<{ recorded: ViaEvent } | { rejected: string }>('report_outcome', r.text);

@@ -28,6 +28,10 @@ export type TestAccess = 'allow' | 'deny' | 'mandate';
 /** The policy the test verifier names in each challenge. */
 export const TEST_POLICY = 'urn:via:policy:test';
 
+/** The connector's refusal of a call with no PoP from an agent that holds its own key. */
+const NO_POP =
+  'no `pop`: an agent holding its own key must present a proof-of-possession; only a credential that registered a custodial agent (v0.3 §16.14) may omit it';
+
 export interface TestVerifierOptions {
   /** The action's rules, as proposed. */
   rules: TestRule[];
@@ -35,8 +39,11 @@ export interface TestVerifierOptions {
   userParams: Record<string, unknown>;
   /** The values the action version fixes itself, read as `constants.<name>` (v0.3 §0.6.1), plain values. */
   constants?: Record<string, unknown>;
-  /** The agent's key — PoPs are checked against it. */
-  agentKey: Pick<ViaAgentKey, 'publicJwk'>;
+  /**
+   * The agent's key — PoPs are checked against it. Absent: Humanos holds the agent's key (v0.3 §16.14), so calls come
+   * with no PoP, as the connector takes them under the agent key; a call with one is `pop_invalid`.
+   */
+  agentKey?: Pick<ViaAgentKey, 'publicJwk'>;
   /**
    * The organization's policy, deciding first (v0.3 §21.3): each tool's access, and `default` (allow) for a tool it
    * names nothing for. Absent, every tool is the mandate's, as with no policy.
@@ -72,17 +79,26 @@ export function createTestVerifier(opts: TestVerifierOptions): {
       mandate: { userParams: Object.fromEntries(Object.entries(opts.userParams).map(([k, v]) => [k, { value: v, description: k }])) },
     },
   } as unknown as ViaMandateCredential;
-  const jkt = jwkThumbprint(opts.agentKey.publicJwk);
+  const agentKey = opts.agentKey;
+  const jkt = agentKey && jwkThumbprint(agentKey.publicJwk);
   const nonces = new Set<string>();
   const decisions: TestDecision[] = [];
   const outcomes: TestOutcome[] = [];
 
-  /** One generic reason, as a verifier gives: which check failed is not the caller's business. */
-  async function popOk(pop: string, authority: CallAuthority, action: string, params: Record<string, unknown>): Promise<boolean> {
+  /**
+   * One generic reason, as a verifier gives: which check failed is not the caller's business. With no PoP the connector
+   * refuses the request outright unless Humanos holds the key, and so does this verifier: it throws.
+   */
+  async function popOk(pop: string | undefined, authority: CallAuthority, action: string, params: Record<string, unknown>): Promise<boolean> {
+    if (!pop) {
+      if (agentKey) throw new Error(NO_POP);
+      return true;
+    }
+    if (!agentKey) return false;
     const d = decodePoP(pop);
     if (!d.ok) return false;
     const p = d.payload as { nonce?: string; action_hash?: string; cnf?: { jkt?: string } };
-    if (p.cnf?.jkt !== jkt || !(await verifyPoPSignature(pop, opts.agentKey.publicJwk))) return false;
+    if (p.cnf?.jkt !== jkt || !(await verifyPoPSignature(pop, agentKey.publicJwk))) return false;
     if (!p.nonce || !nonces.delete(p.nonce)) return false;
     if (authority.mandateId) return authority.mandateId === mandate.id && p.action_hash === actionHash(mandate.id, action, params);
     return authority.policy === TEST_POLICY && p.action_hash === policyActionHash(TEST_POLICY, action, params);
