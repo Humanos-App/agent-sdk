@@ -55,8 +55,8 @@
     "@humanos/via-sdk-v03": "^0.8.0",
     "ai": ">=5",
     "zod": "^4.0.0",
-    "langchain": "^1.0.0",
-    "@langchain/core": "^1.0.0"
+    "langchain": "^1.0.1",
+    "@langchain/core": "^1.0.1"
   },
   "devDependencies": {
     "@ai-sdk/anthropic": "^4.0.96",

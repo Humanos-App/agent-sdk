@@ -34,7 +34,8 @@ export async function aiSdk(from?: Via | ViaOptions): Promise<AiSdkHumanos> {
       Object.entries(tools).map(async ([name, t]) => ({
         name,
         service,
-        ...(t.title ? { title: t.title } : {}),
+        // `title` came with AI SDK 6: read it so the adapter builds against 5 too.
+        ...((t as { title?: string }).title ? { title: (t as { title?: string }).title } : {}),
         // AI SDK 7 lets a description be a function of the call's context; only a fixed one can be declared.
         ...(typeof t.description === 'string' ? { description: t.description } : {}),
         ...(t.inputSchema ? { inputSchema: (await asSchema(t.inputSchema).jsonSchema) as Record<string, unknown> } : {}),

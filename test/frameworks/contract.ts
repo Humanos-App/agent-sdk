@@ -219,12 +219,16 @@ export function runContract(driver: FrameworkDriver): void {
 
     scenario('mcp-stdio', 'MCP over stdio, routed through the proxy: each call checked once, the refused one never reaches the server', async () => {
       const stdio = stdioSupportServer();
-      const { scene, results } = await play(driver, { policy: { lookup_order: 'allow', issue_refund: 'deny' }, steps: [{ calls: [LOOKUP, REFUND] }], local: false, stdio });
+      // A framework that rethrows tool errors may end the run on the refusal (LangChain with @langchain/mcp-adapters 1,
+      // which raises an MCP error result): what was decided and what reached the server are the checks then.
+      const { scene, results, error } = await play(driver, { policy: { lookup_order: 'allow', issue_refund: 'deny' }, steps: [{ calls: [LOOKUP, REFUND] }], local: false, stdio, allowRunError: driver.toolErrorsThrow ?? false });
       expect(scene.decisions.map((d) => [d.tool, d.decision]).sort()).toEqual([['issue_refund', 'deny'], ['lookup_order', 'allow']]);
       expect(stdio.received().map((c) => c.tool)).toEqual(['lookup_order']);
       expect(scene.humanos.declared.some((d) => d.services.includes(ORDERS) && d.tools.length === 2)).toBe(true);
-      expect(results.map((r) => r.text).join('\n')).toContain('A-1');
-      expect(results.some((r) => told(r.text, 'policy_denied'))).toBe(true);
+      if (!error) {
+        expect(results.map((r) => r.text).join('\n')).toContain('A-1');
+        expect(results.some((r) => told(r.text, 'policy_denied'))).toBe(true);
+      } else expect(told(String(error), 'policy_denied')).toBe(true);
     });
 
     scenario('mcp-http', 'MCP over HTTP: each call checked once, the refused one never reaches the server', async () => {
@@ -235,6 +239,7 @@ export function runContract(driver: FrameworkDriver): void {
         local: false,
         http,
         callProof: true,
+        allowRunError: driver.toolErrorsThrow ?? false,
       });
       expect(scene.decisions.map((d) => [d.tool, d.decision]).sort()).toEqual([['issue_refund', 'deny'], ['lookup_order', 'allow']]);
       expect(http.received.map((c) => c.tool)).toEqual(['lookup_order']);
