@@ -48,7 +48,7 @@ Neither package is on a registry yet. Install both from this repository, pinned 
 ```
 
 npm clones the tagged commit and builds it (`prepare`), so a first install takes a few seconds
-longer than a registry package. Requires Node.js 20 or later and `git`.
+longer than a registry package. Requires Node.js 22 or later and `git`.
 
 ## Use
 
@@ -188,7 +188,7 @@ connector does: the mandate decides only the tools the policy leaves to one.
 
 ## Develop
 
-Requires Node.js 20 or later.
+Requires Node.js 22 or later.
 
 ```
 npm ci

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Node.js 22 or later (was 20): AI SDK 7 and its providers require it, and Node 20 reached end of life in April
+  2026. CI runs 22 and 24, as via-sdk's does.
 - `ViaGuard.check(tool, args)` and `ViaGuard.settle(checked, { error? })`: `call` in two halves, for a framework that
   decides a call in one hook and runs the tool itself. `settle` takes the check or its plain `decisionId` and
   `mandateId`, so a hook in another process can report. `call` is now `check`, run, `settle`, unchanged.
