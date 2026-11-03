@@ -27,6 +27,7 @@ For complete, runnable agents built on it, see
 | **`declareTools`** | tell Humanos which tools an agent can call, each as its server describes it, one call per service |
 | **`@humanos/agent-sdk/ai-sdk`** — `aiSdk()` | Vercel AI SDK 5 and later (so Cloudflare Agents and OpenRouter as a provider): `guard(tools, service)` gives the `ToolSet` back with each `execute` verified first, and declares the tools with their JSON Schema |
 | **`@humanos/agent-sdk/claude-agent-sdk`** — `claudeAgentSdk()` | Claude Agent SDK: `gate()` gives the `PreToolUse` / `PostToolUse` hooks that check and settle every call, built-in tools included; `sdkServer` declares an in-process server's tools; `mcpServers` routes stdio servers behind the proxy. With no code, `humanos-agent hook claude` runs the same hooks from `.claude/settings.json` |
+| **`@humanos/agent-sdk/langchain`** — `langchain()` | LangChain 1.x and LangGraph: `gate()` is `createAgent` middleware that checks every tool call and declares the agent's tools; `guard(tools, service)` for a graph's own `ToolNode`; `mcp.servers` / `mcp.tools` for `MultiServerMCPClient` |
 | **`ToolRegistry`** | every tool a process hands its adapters, declared as one list per service, again only when a service's list changes |
 | **`startViaMcpServer`** | expose a guarded agent's tools to an MCP host |
 | **`extractFromToolsList`**, **`importActionDraft`** | turn an existing tool surface into a draft action for the organization |

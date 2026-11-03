@@ -51,6 +51,11 @@ export interface FrameworkDriver {
   run(ctx: RunContext): Promise<void>;
   /** Its HTTP MCP calls go through `via.mcp.transport`, so an allowed one carries the call proof. */
   callProofOverHttp?: boolean;
+  /**
+   * The framework rethrows a tool's error out of the agent run rather than handing it to the model (LangChain's
+   * `createAgent`): the failure must still be reported, and the run end with that error.
+   */
+  toolErrorsThrow?: boolean;
   /** Scenarios this way of running cannot meet, by id, each with why (shown in the test's name). */
   skip?: Partial<Record<ScenarioId, string>>;
 }
@@ -90,6 +95,8 @@ interface Played {
   ran: { tool: string; args: Record<string, unknown> }[];
   /** What the model was told for each call, in the order it made them. */
   results: { text: string; isError: boolean }[];
+  /** The error the run ended with, when `allowRunError` let it. */
+  error?: unknown;
 }
 
 async function play(driver: FrameworkDriver, scenario: {
@@ -100,12 +107,15 @@ async function play(driver: FrameworkDriver, scenario: {
   http?: Awaited<ReturnType<typeof httpSupportServer>>;
   before?: (scene: AgentScene) => void;
   callProof?: boolean;
+  /** The run may end with an error (a framework that rethrows a tool's): returned, not thrown. */
+  allowRunError?: boolean;
 }): Promise<Played> {
   const scene = await agentScene(scenario.policy, { callProof: scenario.callProof ?? false });
   const model = await startModelServer(scenario.steps);
   const local = scenario.local === false ? { tools: [], ran: [] } : supportTools(scenario.local?.failing);
   try {
     scenario.before?.(scene);
+    let error: unknown;
     await driver.run({
       model,
       via: scene.via,
@@ -119,9 +129,12 @@ async function play(driver: FrameworkDriver, scenario: {
       env: scene.env,
       dir: scene.dir,
       prompt: 'Help the customer with order A-1.',
+    }).catch((e: unknown) => {
+      if (!scenario.allowRunError) throw e;
+      error = e;
     });
     await scene.via.tools.flush().catch(() => []);
-    return { scene, model, ran: local.ran, results: model.toolResults() };
+    return { scene, model, ran: local.ran, results: model.toolResults(), error };
   } finally {
     await model.close();
     await scene.close();
@@ -165,9 +178,10 @@ export function runContract(driver: FrameworkDriver): void {
     });
 
     scenario('tool-error', 'a tool error is reported as failed, and the model sees the error', async () => {
-      const { scene, results } = await play(driver, { policy: { lookup_order: 'allow' }, steps: [{ calls: [LOOKUP] }], local: { failing: ['lookup_order'] } });
+      const { scene, results, error } = await play(driver, { policy: { lookup_order: 'allow' }, steps: [{ calls: [LOOKUP] }], local: { failing: ['lookup_order'] }, allowRunError: driver.toolErrorsThrow ?? false });
       expect(scene.outcomes).toEqual([{ decisionEventId: scene.decisions[0]!.eventId, outcome: 'failed', error: 'order store down' }]);
-      expect(results[0]!.text).toContain('order store down');
+      if (driver.toolErrorsThrow) expect(String(error)).toContain('order store down');
+      else expect(results[0]!.text).toContain('order store down');
     });
 
     scenario('delegate', 'Delegate: refused mandate_required while no mandate covers it', async () => {

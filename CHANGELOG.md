@@ -30,6 +30,12 @@
   (`mcp__<server>__<tool>`) is checked as `<tool>` under its server's service, a built-in tool under
   `Claude Agent SDK`. `sdkServer(options, service?)` declares an in-process server's tools (zod shapes as JSON
   Schema); `mcpServers(servers)` routes stdio entries behind the proxy. `zod` is an optional peer.
+- `@humanos/agent-sdk/langchain`: `langchain(via?)`. `gate({ service? })` is `createAgent` middleware:
+  `wrapToolCall` checks each call (a refusal is an error `ToolMessage`; Humanos unreachable refuses) and settles it
+  from the `ToolMessage` the tool answered; `wrapModelCall` declares the agent's tools on its first model call.
+  `guard(tools, service)` wraps tools for a LangGraph `ToolNode`. `mcp.servers` routes `MultiServerMCPClient`'s stdio
+  servers behind the proxy; `mcp.tools(client)` records each tool's server and the MCP tool's own name (the client
+  prefixes `<server>_`), which is the name checked. `langchain` and `@langchain/core` are optional peers.
 - `humanos-agent hook claude`: the same hooks as a command, for `.claude/settings.json` (the SDK loads it by
   default), so an agent with no Humanos code is governed. The decision waits in `.humanos/pending/` between the two
   hook processes. It fails closed: a `PreToolUse` it cannot check answers deny.

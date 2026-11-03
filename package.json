@@ -25,6 +25,10 @@
       "types": "./dist/adapters/claude-agent-sdk.d.ts",
       "import": "./dist/adapters/claude-agent-sdk.js"
     },
+    "./langchain": {
+      "types": "./dist/adapters/langchain.d.ts",
+      "import": "./dist/adapters/langchain.js"
+    },
     "./testing": {
       "types": "./dist/testing.d.ts",
       "import": "./dist/testing.js"
@@ -49,7 +53,9 @@
   "peerDependencies": {
     "@humanos/via-sdk-v03": "^0.8.0",
     "ai": ">=5",
-    "zod": "^4.0.0"
+    "zod": "^4.0.0",
+    "langchain": "^1.0.0",
+    "@langchain/core": "^1.0.0"
   },
   "devDependencies": {
     "@ai-sdk/anthropic": "^4.0.96",
@@ -74,6 +80,12 @@
       "optional": true
     },
     "zod": {
+      "optional": true
+    },
+    "langchain": {
+      "optional": true
+    },
+    "@langchain/core": {
       "optional": true
     }
   }
