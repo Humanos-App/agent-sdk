@@ -105,8 +105,9 @@ export async function initCommand(argv: string[], ctx: CliContext): Promise<{ fr
     ctx.out('Add to the agent’s code:');
     for (const line of SNIPPETS[framework]) ctx.out(`  ${line}`);
   }
+  if (isWorker(ctx.cwd)) for (const line of WORKER_SECRETS) ctx.out(line);
   saveManifest(home, manifest);
-  ctx.out('Until the organization sets a policy every call is allowed and recorded. Set it in the dashboard: Agents, then Policy.');
+  ctx.out('Until this agent’s policy is set, every call is allowed and recorded. Set it in the dashboard: Agents, then Policy.');
   ctx.out('Undo every file change: `humanos-agent restore`.');
   return { framework, registered: true };
 }
@@ -129,6 +130,26 @@ const SNIPPETS: Record<Exclude<Framework, 'claude-agent-sdk'>, string[]> = {
     'await humanos.guard.call(name, args, (a) => runTheTool(a));  // around every call',
   ],
 };
+
+/**
+ * A Worker (Cloudflare Agents) reads its variables from its bindings and has no disk: the agent's key cannot be the
+ * file `init` wrote, so it goes as a secret, with the connector's credentials. `nodejs_compat` puts them in
+ * `process.env`, where the adapter's `via()` reads them.
+ */
+const WORKER_SECRETS = [
+  'This is a Worker: it has no disk, so give it its Humanos values as secrets: HUMANOS_API_KEY, HUMANOS_SIGNATURE_SECRET,',
+  'and HUMANOS_AGENT_KEY (the content of .humanos/agent-key.json: the agent itself, so the same key on every deploy).',
+  '  Locally: in .dev.vars. Deployed: npx wrangler secret put <NAME>, for each. Keep the nodejs_compat flag on.',
+];
+
+/** A Cloudflare Worker project: a wrangler config, or Cloudflare Agents in its dependencies. */
+function isWorker(cwd: string): boolean {
+  if (['wrangler.jsonc', 'wrangler.json', 'wrangler.toml'].some((f) => existsSync(join(cwd, f)))) return true;
+  const file = join(cwd, 'package.json');
+  if (!existsSync(file)) return false;
+  const pkg = JSON.parse(readFileSync(file, 'utf8')) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+  return !!{ ...pkg.devDependencies, ...pkg.dependencies }.agents;
+}
 
 async function chooseFramework(ctx: CliContext, given: Framework | undefined, yes: boolean): Promise<Framework> {
   if (given) {

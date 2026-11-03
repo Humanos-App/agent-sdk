@@ -83,6 +83,19 @@ describe('humanos-agent init — the other paths', () => {
     await scene.close();
   });
 
+  it('a Cloudflare Worker: the AI SDK lines, and the agent’s key and credentials as the Worker’s secrets', async () => {
+    const scene = await agentScene({});
+    write(scene.dir, 'package.json', JSON.stringify({ dependencies: { agents: '0.33.0', ai: '7.0.0' } }));
+    write(scene.dir, 'wrangler.jsonc', '{}');
+    const { ctx, said } = context(scene.dir);
+    expect((await initCommand(['--yes'], ctx)).framework).toBe('ai-sdk');
+    const all = said.join('\n');
+    expect(all).toContain("humanos.guard(tools, 'Your service')");
+    expect(all).toContain('HUMANOS_AGENT_KEY (the content of .humanos/agent-key.json');
+    expect(all).toContain('npx wrangler secret put');
+    await scene.close();
+  });
+
   it('without the connector’s credentials: adds them empty to .env, asks to fill them, and registers nothing', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agent-project-'));
     const { ctx, said } = context(dir, { via: { env: {} } });
