@@ -30,6 +30,13 @@
   (`mcp__<server>__<tool>`) is checked as `<tool>` under its server's service, a built-in tool under
   `Claude Agent SDK`. `sdkServer(options, service?)` declares an in-process server's tools (zod shapes as JSON
   Schema); `mcpServers(servers)` routes stdio entries behind the proxy. `zod` is an optional peer.
+- `humanos-agent init [--framework …] [--yes]`: finds the framework in `package.json` (asks when several, or to
+  confirm; frameworks not supported yet take the custom path), adds the connector's credentials to `.env` empty when
+  missing, ignores `.humanos/`, registers the agent, declares `.mcp.json`'s servers, and writes Claude Agent SDK's
+  hook commands into `.claude/settings.json` (other frameworks: the lines to add, printed). Every file it changes is
+  recorded with a copy of its prior content in `.humanos/init.json`.
+- `humanos-agent restore [--force]`: puts every file `init` changed back byte for byte; one changed since is left
+  and named. `register`, `declare [--mcp <file>] [--entry <module> --framework --service]` and `status` too.
 - `@humanos/agent-sdk/langchain`: `langchain(via?)`. `gate({ service? })` is `createAgent` middleware:
   `wrapToolCall` checks each call (a refusal is an error `ToolMessage`; Humanos unreachable refuses) and settles it
   from the `ToolMessage` the tool answered; `wrapModelCall` declares the agent's tools on its first model call.
