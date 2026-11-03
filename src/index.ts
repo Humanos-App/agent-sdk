@@ -12,6 +12,7 @@
 // is exactly what `registerAgentKey` validates.
 export {
   softwareKey,
+  storedSoftwareKey,
   registrationProof,
   deviceSelfKey,
   custodialKey,
@@ -24,7 +25,7 @@ export {
   devNitroCa,
   attestationRootPem,
 } from './key-provider.js';
-export type { ViaAgentKey, ConfinementEvidence, Assurance, Binding } from './key-provider.js';
+export type { ViaAgentKey, StoredKey, ConfinementEvidence, Assurance, Binding } from './key-provider.js';
 
 // The PEP — every tool call: the mandate it presents, if any → challenge → PoP → verify → execute/refuse.
 export { ViaGuard, ViaDeniedError } from './guard.js';
@@ -54,6 +55,10 @@ export type { Upstream, UpstreamSpec, UpstreamServer, UpstreamTool, UpstreamResu
 // call per service.
 export { declareTools, DECLARE_TOOLS_MAX } from './mcp/declare.js';
 export type { DeclaredTool, DeclareToolsOptions, ServiceDeclaration } from './mcp/declare.js';
+
+// Registering — the agent's key, graded by how it is held, and the DID every call after names.
+export { registerAgent } from './mcp/register.js';
+export type { RegisteredAgent, RegisterAgentOptions } from './mcp/register.js';
 
 // EXTRACTION — parse an already-built agent's tool surface into a VIAAction draft. Params and
 // descriptions are derived; `rules`/`userParams` are ALWAYS empty (R8), because constraints are

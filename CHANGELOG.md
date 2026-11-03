@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.2
+
+The version stays on 0.4.x until the spec has a new version.
+
+- `registerAgent(client, key, { tools? })`: the connector's `register_challenge` and `register`, the key's evidence
+  bound to the nonce; answers the agent's DID, the rung Humanos granted, and `existing` for a key already registered.
+  `tools` records the agent's tools with the registration, as `declareTools` would (at most `DECLARE_TOOLS_MAX`).
+- `storedSoftwareKey(file)`: `softwareKey`'s rung for an agent that restarts. The key lives in a file only its owner
+  can read, created on the first run and loaded after, so the agent keeps its DID and its mandates (until Humanos has
+  key rotation, v0.3 §16.5, a new key is a new agent). The file is the one agent-kit's `lib/stored-key.ts` writes.
+
 ## 0.4.1
 
 - The client names its own version in `clientInfo` again: 0.4.0 reported `0.3.0`.
