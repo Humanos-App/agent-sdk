@@ -7,7 +7,7 @@ import { createAnthropic } from '@ai-sdk/anthropic';
 import { experimental_createMCPClient as createMCPClient } from '@ai-sdk/mcp';
 import { Experimental_StdioMCPTransport as StdioMCPTransport } from '@ai-sdk/mcp/mcp-stdio';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { generateText, isStepCount, jsonSchema, streamText, tool, type ToolSet } from 'ai';
+import { generateText, stepCountIs, jsonSchema, streamText, tool, type ToolSet } from 'ai';
 import { aiSdk } from '../../../src/adapters/ai-sdk.js';
 import type { FrameworkDriver, RunContext } from '../contract.js';
 
@@ -42,7 +42,7 @@ export const generate: FrameworkDriver = {
   async run(ctx) {
     const { tools, close } = await toolsFor(ctx);
     try {
-      await generateText({ model: model(ctx), tools, prompt: ctx.prompt, stopWhen: isStepCount(5) });
+      await generateText({ model: model(ctx), tools, prompt: ctx.prompt, stopWhen: stepCountIs(5) });
     } finally {
       await close();
     }
@@ -55,7 +55,7 @@ export const stream: FrameworkDriver = {
   async run(ctx) {
     const { tools, close } = await toolsFor(ctx);
     try {
-      const result = streamText({ model: model(ctx), tools, prompt: ctx.prompt, stopWhen: isStepCount(5), onError: () => {} });
+      const result = streamText({ model: model(ctx), tools, prompt: ctx.prompt, stopWhen: stepCountIs(5), onError: () => {} });
       await result.consumeStream();
     } finally {
       await close();
