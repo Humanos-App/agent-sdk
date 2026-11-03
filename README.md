@@ -193,6 +193,17 @@ npm test
 npm run build     # dist/: ES modules + type declarations
 ```
 
+The framework tests run each adapter inside its real framework: the framework's own agent loop and Anthropic
+provider against a scripted model server, a fake Humanos connector deciding on a test policy, and real MCP servers
+(stdio and HTTP). Every framework passes the same contract (`test/frameworks/contract.ts`). Their frameworks are
+installed apart, so `npm test` needs none of them:
+
+```
+(cd test/frameworks && npm ci)
+npm run check-types:frameworks
+npm run test:frameworks
+```
+
 `npm ci` also builds `dist/` (`prepare`). `@humanos/via-sdk-v03` is not on a registry yet;
 development installs it from `vendor/`, and that tarball is the copy projects install by URL.
 

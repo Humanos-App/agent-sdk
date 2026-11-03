@@ -1,0 +1,9 @@
+{
+  "name": "@humanos/agent-sdk-framework-tests",
+  "private": true,
+  "type": "module",
+  "description": "The frameworks the adapters are tested against, apart from the package's own dependencies: `npm ci` here before `npm run test:frameworks` at the root. CI installs each framework's lowest and latest supported version over these.",
+  "devDependencies": {
+    "@anthropic-ai/sdk": "1.4.0"
+  }
+}

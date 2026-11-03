@@ -6,10 +6,10 @@ import { describe, expect, it } from 'vitest';
 import { parseProxyArgs, startProxyCommand } from '../src/cli/proxy.js';
 import { softwareKey } from '../src/key-provider.js';
 import { createTestVerifier } from '../src/testing.js';
-import { fakeConnector } from './fixtures/fake-connector.js';
+import { fakeConnector } from './harness/connector.js';
 
 const AGENT = 'did:web:humanos.tech:agent:a';
-const SERVER = fileURLToPath(new URL('./fixtures/support-server.mjs', import.meta.url));
+const SERVER = fileURLToPath(new URL('./harness/support-server.mjs', import.meta.url));
 
 describe('humanos-agent proxy — the governing proxy in front of a real stdio MCP server', () => {
   it('starts the server, declares its tools, allows what the policy allows and refuses the rest', async () => {

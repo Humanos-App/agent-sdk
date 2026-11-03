@@ -22,3 +22,18 @@ jobs:
       - run: test -f dist/index.js && test -f dist/testing.js
       - run: npm run check-types
       - run: npm test
+
+  # Every adapter in its real framework, against the scripted model and the fake connector (test/harness). The
+  # frameworks are installed apart (test/frameworks/package.json), so the job above stays light.
+  frameworks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm ci
+        working-directory: test/frameworks
+      - run: npm run check-types:frameworks
+      - run: npm run test:frameworks

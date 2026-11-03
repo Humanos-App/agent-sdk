@@ -23,14 +23,18 @@ import type { ToolRegistry } from './tool-registry.js';
 import type { McpServerSpec, UpstreamServer, UpstreamTool } from './upstream.js';
 
 /**
- * What every MCP client transport has: AI SDK's `MCPTransport` and the MCP SDK's `Transport` alike. Method syntax,
- * so a transport typed with its own library's message type still fits.
+ * What every MCP client transport has: AI SDK's `MCPTransport` and the MCP SDK's `Transport` alike. Each library types
+ * its messages its own way (the MCP SDK's `send` also takes a batch), so the message is `any` here: the wrapper reads
+ * it as JSON-RPC and passes anything else through.
  */
 export interface McpTransportLike {
   start(): Promise<void>;
-  send(message: JsonRpcMessage, options?: unknown): Promise<void>;
-  close(...args: unknown[]): Promise<void>;
-  onmessage?(message: JsonRpcMessage, extra?: unknown): void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  send(message: any, options?: any): Promise<void>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  close(...args: any[]): Promise<void>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onmessage?(message: any, extra?: any): void;
   onerror?(error: Error): void;
   onclose?(): void;
 }
@@ -84,8 +88,9 @@ export function createViaMcp(deps: ViaMcpDeps): ViaMcp {
 }
 
 type Id = string | number;
-const isRequest = (m: JsonRpcMessage, method: string): m is JsonRpcMessage & { id: Id } => m.method === method && m.id !== undefined && m.id !== null;
-const isResponse = (m: JsonRpcMessage): m is JsonRpcMessage & { id: Id } => m.method === undefined && m.id !== undefined && m.id !== null;
+const isMessage = (m: unknown): m is JsonRpcMessage => typeof m === 'object' && m !== null && !Array.isArray(m);
+const isRequest = (m: unknown, method: string): m is JsonRpcMessage & { id: Id } => isMessage(m) && m.method === method && m.id !== undefined && m.id !== null;
+const isResponse = (m: unknown): m is JsonRpcMessage & { id: Id } => isMessage(m) && m.method === undefined && m.id !== undefined && m.id !== null;
 
 function governTransport<T extends McpTransportLike>(deps: ViaMcpDeps, service: string, inner: T, options: McpConnectionOptions, serve: (tool: string) => void): T {
   const plainReason = deps.plainReason ?? defaultPlainReason;
@@ -94,9 +99,9 @@ function governTransport<T extends McpTransportLike>(deps: ViaMcpDeps, service: 
   const calls = new Map<Id, GuardCheck>();
   let handler: McpTransportLike['onmessage'];
 
-  const deliver = (message: JsonRpcMessage, extra?: unknown): void => handler?.call(inner, message, extra);
+  const deliver = (message: unknown, extra?: unknown): void => handler?.call(inner, message, extra);
 
-  const send = async (message: JsonRpcMessage, sendOptions?: unknown): Promise<void> => {
+  const send = async (message: unknown, sendOptions?: unknown): Promise<void> => {
     if (isRequest(message, 'tools/list')) listing.add(message.id);
     if (!isRequest(message, 'tools/call') || checkedHere.getStore()) return inner.send(message, sendOptions);
 
@@ -121,7 +126,7 @@ function governTransport<T extends McpTransportLike>(deps: ViaMcpDeps, service: 
     }
   };
 
-  const receive = (message: JsonRpcMessage, extra?: unknown): void => {
+  const receive = (message: unknown, extra?: unknown): void => {
     if (!isResponse(message)) return deliver(message, extra);
     if (listing.delete(message.id)) declare(message);
     const checked = calls.get(message.id);

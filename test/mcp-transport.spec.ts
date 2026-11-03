@@ -9,7 +9,7 @@ import { softwareKey } from '../src/key-provider.js';
 import { createViaMcp, routeStdio, runChecked } from '../src/mcp/transport.js';
 import { ToolRegistry } from '../src/mcp/tool-registry.js';
 import { createTestVerifier } from '../src/testing.js';
-import { fakeConnector, withCallProof } from './fixtures/fake-connector.js';
+import { fakeConnector, withCallProof } from './harness/connector.js';
 
 const AGENT = 'did:web:humanos.tech:agent:a';
 const SERVICE = 'Support desk';

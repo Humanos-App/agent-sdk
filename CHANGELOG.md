@@ -19,6 +19,10 @@
   the governing proxy, as the project's own agent (`via()`). The package now has a `bin`.
 - `McpServerSpec`: the one type an MCP server is named with; `UpstreamSpec` stays as its alias. The proxy's refusal
   text moved to `refusalText`, shared with the connection wrapper.
+- Framework tests (`npm run test:frameworks`, a CI job of its own): a scripted Anthropic model server, a fake
+  connector on `createTestVerifier` (in process, and on HTTP with the request signature checked), the support desk's
+  MCP server over stdio and HTTP, and the contract every framework driver must pass. The first driver is an agent
+  written straight on `@anthropic-ai/sdk`, through `via()`, the guard and `via().mcp`.
 - `ToolRegistry`: declares every tool added, as one list per service, so tool sets of one service added apart do
   not replace each other on the platform.
 
