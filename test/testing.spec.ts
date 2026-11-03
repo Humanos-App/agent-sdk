@@ -1,5 +1,5 @@
 /**
- * `@humanos/agent-sdk/testing` — the in-process verifier an agent builder tests against. It must
+ * `@humanos-ai/agent-sdk/testing` — the in-process verifier an agent builder tests against. It must
  * behave like the connector where an agent can tell: PoPs checked (key, signature, nonce, the hash
  * of THIS call over its authority), the policy deciding first, rules evaluated, outcomes recorded.
  */

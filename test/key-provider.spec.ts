@@ -11,7 +11,7 @@ import {
 } from '../src/key-provider.js';
 import { actionHash, decodePoP, jwkThumbprint, verifyPoPSignature } from '../src/sdk.js';
 // The verifier's half, from the protocol package itself: what the platform runs on this evidence.
-import { createRegChallengeStore, registerAgentKey, registerChallenge } from '@humanos/via-sdk-v03';
+import { createRegChallengeStore, registerAgentKey, registerChallenge } from '@humanos-ai/via-sdk';
 
 /** The platform DID a registration challenge returns as `aud` (§16.5). */
 const AUD = 'did:web:verifier.test';
