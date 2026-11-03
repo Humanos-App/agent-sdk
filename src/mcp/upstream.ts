@@ -71,7 +71,11 @@ export interface Upstream {
   close(): Promise<void>;
 }
 
-export interface UpstreamSpec {
+/**
+ * An MCP server, as every part of the SDK names one: the proxy's upstreams, `routeStdio`, and what each framework
+ * adapter reads its framework's MCP config into. `service` is the name the organization sees its tools grouped under.
+ */
+export interface McpServerSpec {
   service: string;
   /** stdio: the command to spawn, its arguments, environment and working directory. */
   command?: string;
@@ -84,6 +88,9 @@ export interface UpstreamSpec {
   /** Per request. Default 60 s. */
   timeoutMs?: number;
 }
+
+/** The proxy's name for an {@link McpServerSpec}, kept for the code that already uses it. */
+export type UpstreamSpec = McpServerSpec;
 
 const PROTOCOL = '2025-06-18';
 const CLIENT_INFO = { name: 'via-proxy', version: '0.1.0' };

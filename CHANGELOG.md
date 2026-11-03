@@ -9,6 +9,16 @@
   `HUMANOS_MCP_URL`, `HUMANOS_AGENT_KEY`, `HUMANOS_DIR`, over the working directory's `.env`): the connector, the key,
   the DID (registering the key when it has none), the guard and the tool registry. One per process without options.
 - `softwareKeyFromJson(json)`: `storedSoftwareKey`'s key from the key file's content, for an agent with no disk.
+- `@humanos/agent-sdk/mcp` and `via().mcp`: `transport(service, inner, { origin? })` wraps an MCP client transport
+  (AI SDK's `MCPTransport`, the MCP SDK's `Transport`). Each `tools/list` answer is declared under `service`; each
+  `tools/call` is checked before it is sent. A refused call never leaves the process, and the framework gets the
+  proxy's refusal text as the tool's result. An allowed one carries the call proof in `_meta` (for an `https`
+  origin) and is settled when the server answers. `checks(service, tool)` and `runChecked(fn)` keep a call
+  checked once when a framework hook also sees it.
+- `routeStdio(spec)` and `humanos-agent proxy --service <name> -- <command> <args…>`: a stdio server entry behind
+  the governing proxy, as the project's own agent (`via()`). The package now has a `bin`.
+- `McpServerSpec`: the one type an MCP server is named with; `UpstreamSpec` stays as its alias. The proxy's refusal
+  text moved to `refusalText`, shared with the connection wrapper.
 - `ToolRegistry`: declares every tool added, as one list per service, so tool sets of one service added apart do
   not replace each other on the platform.
 
