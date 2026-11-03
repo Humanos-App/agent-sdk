@@ -47,6 +47,7 @@
     "check-types:frameworks": "tsc -p test/frameworks/tsconfig.json --noEmit",
     "test": "vitest run",
     "test:frameworks": "vitest run --config vitest.frameworks.config.ts",
+    "test:live": "vitest run --config vitest.live.config.ts",
     "test:watch": "vitest",
     "vendor:sdk-v03": "sh scripts/vendor-sdk-v03.sh"
   },

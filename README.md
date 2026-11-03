@@ -209,6 +209,11 @@ npm run check-types:frameworks
 npm run test:frameworks
 ```
 
+The live tier runs the same drivers on a real model (Claude Haiku) against the dev platform, as one agent of a test
+organization whose policy is set by hand. It needs `HUMANOS_LIVE_API_KEY`, `HUMANOS_LIVE_SIGNATURE_SECRET` and
+`ANTHROPIC_API_KEY` (in the environment or `test/live/.env`), skips without them, and runs only by hand:
+`npm run test:live`, or the `live` workflow.
+
 `npm ci` also builds `dist/` (`prepare`). `@humanos/via-sdk-v03` is not on a registry yet;
 development installs it from `vendor/`, and that tarball is the copy projects install by URL.
 

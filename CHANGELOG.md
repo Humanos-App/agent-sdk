@@ -48,6 +48,10 @@
   hook processes. It fails closed: a `PreToolUse` it cannot check answers deny.
 - `via().mcp.route(spec, via?)` remembers the service it routed, and `checks` answers true for its tools.
 - `via({ cwd })`: the project `.env` and `.humanos` are read from.
+- The live tier (`npm run test:live`, the by-hand `live` workflow): the framework drivers on a real model against
+  the dev platform. Its preflight declares the live tools and, until the test organization's policy gives them
+  Allow, Deny and Delegate, fails naming what to set in the dashboard. Each framework: an allowed call runs and its
+  outcome is recorded, a denied one never runs, a Delegate one is refused `mandate_required`.
 - Framework tests (`npm run test:frameworks`, a CI job of its own): a scripted Anthropic model server, a fake
   connector on `createTestVerifier` (in process, and on HTTP with the request signature checked), the support desk's
   MCP server over stdio and HTTP, and the contract every framework driver must pass. The first driver is an agent

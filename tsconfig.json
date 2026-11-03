@@ -13,5 +13,5 @@
   },
   "include": ["src", "test"],
   // The framework tests need their frameworks, installed in test/frameworks: `npm run check-types:frameworks`.
-  "exclude": ["test/frameworks"]
+  "exclude": ["test/frameworks", "test/live"]
 }

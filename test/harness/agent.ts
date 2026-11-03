@@ -42,7 +42,7 @@ export async function agentScene(policy: Record<string, TestAccess>, options: { 
   key.save(AGENT_DID);
 
   const t = createTestVerifier({ rules: [], userParams: {}, agentKey: key, policy: { tools: policy } });
-  const humanos = fakeConnector(options.callProof ? withCallProof(t.verifier) : t.verifier, AGENT_DID);
+  const humanos = fakeConnector(options.callProof ? withCallProof(t.verifier) : t.verifier, AGENT_DID, policy);
   const served = await serveConnector(humanos, CREDENTIALS);
   const env = {
     HUMANOS_API_KEY: CREDENTIALS.apiKey,
