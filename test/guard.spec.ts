@@ -28,6 +28,7 @@ function recorder(script: (input: VerifyInput, n: number) => VerifyOutcome, opts
     },
     verify: (input) => {
       verified.push(input);
+      if (!input.pop) return { decision: 'deny', reason: 'pop_missing', evaluations: [] };
       const pop = decodePoP(input.pop);
       if (!pop.ok || !pop.payload) return { decision: 'deny', reason: pop.ok ? 'pop_invalid' : pop.reason, evaluations: [] };
       if (!nonces.delete(pop.payload.nonce)) return { decision: 'deny', reason: 'pop_replayed', evaluations: [] };
@@ -42,7 +43,8 @@ function recorder(script: (input: VerifyInput, n: number) => VerifyOutcome, opts
 }
 
 /** Decode a PoP that MUST be well-formed — the test is about what it carries, not whether it parses. */
-function payloadOf(pop: string) {
+function payloadOf(pop: string | undefined) {
+  if (!pop) throw new Error('no PoP');
   const d = decodePoP(pop);
   if (!d.ok || !d.payload) throw new Error(`malformed PoP: ${d.ok ? 'no payload' : d.reason}`);
   return { payload: d.payload, jkt: d.jkt };
@@ -78,7 +80,7 @@ describe('ViaGuard — the per-call pipeline (v0.3 §16.11, §16.6)', () => {
     expect(pop.payload.action_hash).toBe(actionHash(MANDATE.id, 'book_load', v.params));
     expect(pop.payload.aud).toBe('did:web:humanos.tech:org:test');
     expect(pop.jkt).toBe(jwkThumbprint(agentKey.publicJwk));
-    expect(await verifyPoPSignature(v.pop, agentKey.publicJwk)).toBe(true);
+    expect(await verifyPoPSignature(v.pop!, agentKey.publicJwk)).toBe(true);
 
     // Second phase: the outcome, against the DECISION event, with its own fresh PoP.
     expect(reported).toHaveLength(1);
@@ -294,5 +296,84 @@ describe('ViaGuard — the mandate chosen per call (v0.3 §21.3)', () => {
     const { g } = await guard(() => ({ decision: 'deny', reason: 'policy_denied', evaluations: [] }), { mandate: undefined, mandates });
     await expect(g.call('wire', {}, () => 'ok')).rejects.toMatchObject({ reason: 'policy_denied' });
     expect(asked).toHaveLength(1);
+  });
+});
+
+describe('ViaGuard with no agentKey — Humanos holds the key (v0.3 §16.14)', () => {
+  /** The verifier a Humanos-held key meets: it takes calls with no PoP, as the connector does under the agent key. */
+  function custodialVerifier(script: (input: VerifyInput) => VerifyOutcome = allow) {
+    const challenged: unknown[] = [];
+    const verified: VerifyInput[] = [];
+    const reported: ReportOutcomeInput[] = [];
+    const verifier: GuardVerifier = {
+      challenge: (input) => {
+        challenged.push(input);
+        return { nonce: 'n', aud: 'did:web:humanos.tech:org:test', ttl: 60, iat: 1_757_160_000, policy: POLICY };
+      },
+      verify: (input) => {
+        verified.push(input);
+        return script(input);
+      },
+      reportOutcome: (input) => {
+        reported.push(input);
+        return { recorded: {} };
+      },
+    };
+    return { verifier, challenged, verified, reported };
+  }
+
+  it('asks for no challenge and sends no proof; the call names the agent and the mandate, Humanos the policy', async () => {
+    const r = custodialVerifier();
+    const g = new ViaGuard({ mandate: MANDATE, agentDid: AGENT, verifier: r.verifier });
+
+    const out = await g.call('book_load', { load_id: 'L-1' }, () => 'booked', { audience: 'https://carrier.example' });
+
+    expect(out).toMatchObject({ decision: 'allow', result: 'booked', mandateId: MANDATE.id });
+    expect(r.challenged).toHaveLength(0);
+    expect(r.verified[0]).toEqual({
+      agentDid: AGENT,
+      mandateId: MANDATE.id,
+      tool: 'book_load',
+      params: { load_id: 'L-1', tool: 'book_load' },
+      audience: 'https://carrier.example',
+      now: undefined,
+    });
+    expect(r.reported[0]).toEqual({
+      agentDid: AGENT,
+      mandateId: MANDATE.id,
+      decisionEventId: 'urn:via:event:decision',
+      outcome: 'completed',
+      now: undefined,
+    });
+  });
+
+  it('presents no authority at all for a call the policy decides: Humanos names its policy itself', async () => {
+    const r = custodialVerifier();
+    const g = new ViaGuard({ agentDid: AGENT, verifier: r.verifier, mandates: { mandateFor: () => undefined } });
+
+    expect(await g.call('kb_search', {}, () => 'ok')).toMatchObject({ decision: 'allow', result: 'ok' });
+    expect(r.verified[0]).not.toHaveProperty('policy');
+    expect(r.verified[0]).not.toHaveProperty('mandateId');
+    expect(r.verified[0]).not.toHaveProperty('pop');
+    expect(r.reported[0]).toMatchObject({ outcome: 'completed' });
+    expect(r.reported[0]).not.toHaveProperty('pop');
+  });
+
+  it('reports a failed tool with its error, with no proof', async () => {
+    const r = custodialVerifier();
+    const g = new ViaGuard({ mandate: MANDATE, agentDid: AGENT, verifier: r.verifier });
+    await expect(g.call('book_load', {}, () => { throw new Error('down'); })).rejects.toThrow('down');
+    expect(r.reported[0]).toMatchObject({ outcome: 'failed', error: 'down' });
+    expect(r.reported[0]).not.toHaveProperty('pop');
+  });
+
+  it('a mandate_required deny still reads the source again and presents the mandate a person just granted', async () => {
+    const r = custodialVerifier((input) => (input.mandateId ? allow() : { decision: 'deny', reason: 'mandate_required', evaluations: [] }));
+    const granted = { mandate: MANDATE };
+    const picks = [undefined, granted];
+    const g = new ViaGuard({ agentDid: AGENT, verifier: r.verifier, mandates: { mandateFor: () => picks.shift() } });
+
+    expect(await g.call('wire', {}, () => 'sent')).toMatchObject({ decision: 'allow', mandateId: MANDATE.id });
+    expect(r.verified.map((v) => v.mandateId)).toEqual([undefined, MANDATE.id]);
   });
 });
