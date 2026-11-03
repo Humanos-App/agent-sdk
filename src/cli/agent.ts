@@ -17,9 +17,10 @@ const agentOf = (ctx: CliContext): Promise<Via> => via({ cwd: ctx.cwd, ...ctx.vi
 /** Registers the agent's key (minting it on the first run) and says who the agent is. The same key always answers the same DID. */
 export async function registerCommand(_argv: string[], ctx: CliContext): Promise<Via> {
   const v = await agentOf(ctx);
-  const r = await registerAgent(v.client, v.key);
+  // A key with no DID yet was registered by `via()` itself, just now; one with a DID is asked again for its grade.
+  const r = v.registration ?? (await registerAgent(v.client, v.key));
   const env = ctx.via?.env ?? environment(ctx.cwd);
-  ctx.out(`Agent ${r.existing ? 'already registered' : 'registered'}: ${r.did}`);
+  ctx.out(`Agent ${!v.registration && r.existing ? 'already registered' : 'registered'}: ${r.did}`);
   ctx.out(`  key: ${env.HUMANOS_AGENT_KEY ? 'HUMANOS_AGENT_KEY' : join(agentDir(env, ctx.cwd, ctx.via?.dir), 'agent-key.json')} (keep it: a new key is a new agent)`);
   ctx.out(`  graded: ${r.granted.assurance} / ${r.granted.binding}${r.degradedFrom ? ` (claimed ${r.degradedFrom})` : ''}`);
   return v;

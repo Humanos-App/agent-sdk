@@ -9,7 +9,7 @@
  * puts each back byte for byte. A file changed since `init` is left as it is and named, unless `--force`.
  */
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmdirSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { agentDir, environment } from '../via.js';
 import { declareCommand, registerCommand } from './agent.js';
@@ -194,6 +194,11 @@ function saveManifest(home: string, manifest: Manifest): void {
   writeFileSync(join(home, 'init.json'), `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
+/** Removes `dir` and its parents up to `stop` while they are empty: only folders that held nothing but what was removed. */
+function removeEmptyParents(dir: string, stop: string): void {
+  for (let d = dir; d !== stop && d.startsWith(stop) && existsSync(d) && readdirSync(d).length === 0; d = dirname(d)) rmdirSync(d);
+}
+
 /** Every file `init` changed, put back as it was; one changed since `init` is left and named, unless `--force`. */
 export async function restoreCommand(argv: string[], ctx: CliContext): Promise<{ restored: string[]; kept: string[] }> {
   const force = parseFlags(argv).flags.force === true;
@@ -213,7 +218,10 @@ export async function restoreCommand(argv: string[], ctx: CliContext): Promise<{
       continue;
     }
     if (c.existed && c.backup) copyFileSync(join(home, c.backup), path);
-    else rmSync(path, { force: true });
+    else {
+      rmSync(path, { force: true });
+      removeEmptyParents(dirname(path), resolve(ctx.cwd)); // the folder `init` made for it (`.claude/`), when nothing else is there
+    }
     restored.push(c.file);
   }
   if (kept.length) saveManifest(home, { ...manifest, changes: kept });

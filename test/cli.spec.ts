@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { declareCommand, statusCommand } from '../src/cli/agent.js';
+import { declareCommand, registerCommand, statusCommand } from '../src/cli/agent.js';
 import type { CliContext } from '../src/cli/context.js';
 import { CLAUDE_HOOK_COMMAND, detectFrameworks, initCommand, restoreCommand, withClaudeHooks } from '../src/cli/init.js';
 import { agentScene, AGENT_DID } from './harness/agent.js';
@@ -67,6 +67,7 @@ describe('humanos-agent init and restore — a Claude Agent SDK project, its own
     expect(read(scene.dir, '.claude/settings.json')).toBe('{"edited": true}\n');
     await restoreCommand(['--force'], ctx);
     expect(existsSync(join(scene.dir, '.claude/settings.json'))).toBe(false); // init created it: restored is gone
+    expect(existsSync(join(scene.dir, '.claude'))).toBe(false); // and the folder it made for it
     await scene.close();
   });
 });
@@ -117,6 +118,16 @@ describe('humanos-agent declare and status', () => {
     const d = scene.humanos.declared.find((x) => x.services.includes('Support desk'))!;
     expect(d.tools.map((t) => t.name)).toEqual(['lookup_order', 'issue_refund']);
     expect(d.tools[1]).toMatchObject({ inputSchema: { properties: { amount_eur: { type: 'number' } } } });
+    await scene.close();
+  });
+
+  it('register: a new key is "registered", the same key again "already registered"', async () => {
+    const scene = await agentScene({});
+    const fresh = mkdtempSync(join(tmpdir(), 'agent-home-'));
+    const first = context(scene.dir, { via: { env: { ...scene.env, HUMANOS_DIR: fresh } } });
+    await registerCommand([], first.ctx);
+    expect(first.said[0]).toBe(`Agent registered: ${AGENT_DID}`);
+    expect(first.said.join('\n')).toContain(join(fresh, 'agent-key.json'));
     await scene.close();
   });
 

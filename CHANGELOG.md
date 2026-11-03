@@ -9,7 +9,8 @@
   `mandateId`, so a hook in another process can report. `call` is now `check`, run, `settle`, unchanged.
 - `via(options?)`: the agent's Humanos from its environment (`HUMANOS_API_KEY`, `HUMANOS_SIGNATURE_SECRET`,
   `HUMANOS_MCP_URL`, `HUMANOS_AGENT_KEY`, `HUMANOS_DIR`, over the working directory's `.env`): the connector, the key,
-  the DID (registering the key when it has none), the guard and the tool registry. One per process without options.
+  the DID (registering the key when it has none; `registration` then holds what registering answered), the guard
+  and the tool registry. One per process without options.
 - `softwareKeyFromJson(json)`: `storedSoftwareKey`'s key from the key file's content, for an agent with no disk.
 - `@humanos/agent-sdk/mcp` and `via().mcp`: `transport(service, inner, { origin? })` wraps an MCP client transport
   (AI SDK's `MCPTransport`, the MCP SDK's `Transport`). Each `tools/list` answer is declared under `service`; each
