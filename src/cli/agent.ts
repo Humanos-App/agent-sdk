@@ -1,5 +1,5 @@
 /**
- * `humanos-agent register`, `declare` and `status`: the agent's identity, the tools it can reach, and what the
+ * `humanos register`, `declare` and `status`: the agent's identity, the tools it can reach, and what the
  * organization's policy lets it do with each.
  */
 import { existsSync, readFileSync } from 'node:fs';

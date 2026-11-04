@@ -21,7 +21,7 @@ const write = (dir: string, file: string, content: string) => {
 };
 const read = (dir: string, file: string) => readFileSync(join(dir, file), 'utf8');
 
-describe('humanos-agent init and restore — a Claude Agent SDK project, its own settings kept', () => {
+describe('humanos init and restore — a Claude Agent SDK project, its own settings kept', () => {
   it('writes the hooks, ignores .humanos, registers, declares .mcp.json, and restore puts every byte back', async () => {
     const scene = await agentScene({});
     const support = stdioSupportServer();
@@ -72,7 +72,7 @@ describe('humanos-agent init and restore — a Claude Agent SDK project, its own
   });
 });
 
-describe('humanos-agent init — the other paths', () => {
+describe('humanos init — the other paths', () => {
   it('an AI SDK project: prints the lines to add, and writes no settings', async () => {
     const scene = await agentScene({});
     write(scene.dir, 'package.json', JSON.stringify({ dependencies: { ai: '7.0.0' } }));
@@ -138,7 +138,7 @@ describe('humanos-agent init — the other paths', () => {
   });
 });
 
-describe('humanos-agent restore — only what init could have written', () => {
+describe('humanos restore — only what init could have written', () => {
   it('a record pointing outside the project is not followed', async () => {
     const scene = await agentScene({});
     write(scene.dir, 'package.json', JSON.stringify({ dependencies: { ai: '7' } }));
@@ -158,7 +158,7 @@ describe('humanos-agent restore — only what init could have written', () => {
   });
 });
 
-describe('humanos-agent declare and status', () => {
+describe('humanos declare and status', () => {
   it('declare --entry: a module’s AI SDK tools, with their schemas', async () => {
     const scene = await agentScene({});
     const { ctx } = context(scene.dir);

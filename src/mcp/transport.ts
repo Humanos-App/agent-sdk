@@ -188,10 +188,10 @@ function failureOf(message: JsonRpcMessage): { error?: string } {
 }
 
 /** The command a routed stdio entry runs: the governing proxy, from the project's own install. */
-export const PROXY_COMMAND = { command: 'npx', args: ['--no-install', 'humanos-agent', 'proxy'] } as const;
+export const PROXY_COMMAND = { command: 'npx', args: ['--no-install', 'humanos', 'proxy'] } as const;
 
 /**
- * A stdio server entry, rewritten to run the governing proxy in front of it (`humanos-agent proxy --service <name>
+ * A stdio server entry, rewritten to run the governing proxy in front of it (`humanos proxy --service <name>
  * -- <command> <args>`): every tool declared from the server's list, every call checked. A remote entry comes back
  * as it is, left to the framework's own check; an entry already routed, unchanged.
  */

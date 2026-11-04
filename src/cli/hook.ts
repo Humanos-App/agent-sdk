@@ -1,5 +1,5 @@
 /**
- * `humanos-agent hook claude` — the Claude Agent SDK hooks as a command, for an agent with no Humanos code: `init`
+ * `humanos hook claude` — the Claude Agent SDK hooks as a command, for an agent with no Humanos code: `init`
  * writes it into `.claude/settings.json` for `PreToolUse`, `PostToolUse` and `PostToolUseFailure`. The SDK runs it
  * with the hook's input on stdin; it answers on stdout.
  *
@@ -50,7 +50,7 @@ export async function claudeHookCommand(stdin: string, options: ViaOptions = {})
     return out.hookSpecificOutput ? JSON.stringify(out) : '';
   } catch (e) {
     if (pre) return JSON.stringify(denyCall(unreachable(e)));
-    process.stderr.write(`humanos-agent hook: the outcome was not reported: ${e instanceof Error ? e.message : String(e)}\n`);
+    process.stderr.write(`humanos hook: the outcome was not reported: ${e instanceof Error ? e.message : String(e)}\n`);
     return '';
   }
 }

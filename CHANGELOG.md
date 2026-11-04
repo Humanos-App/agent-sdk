@@ -19,12 +19,12 @@ Needs a Humanos platform where an agent key registers an agent with no key and v
   agent key, and one with a proof is `pop_invalid`. With `agentKey`, a call with no proof throws, as the connector
   refuses it.
 
-- `humanos-agent help` (also `--help`, `-h`, `<command> --help`) lists every command with examples; `--version`.
+- `humanos help` (also `--help`, `-h`, `<command> --help`) lists every command with examples; `--version`.
 - The adapters share one check (failing closed, one set of words for a refusal), one run that reports the outcome
   once, and one routing of stdio MCP entries (`src/adapters/shared.ts`). With it: LangChain's `gate` no longer
   reports a call twice when reporting its outcome fails, and LangChain's `guard` reports a tool that answers with an
   error `ToolMessage` as failed.
-- `humanos-agent init --yes` with more than one framework refuses to pick, naming `--framework`; a wrong answer to the
+- `humanos init --yes` with more than one framework refuses to pick, naming `--framework`; a wrong answer to the
   question is asked again. `restore` follows only records of files in the project. The CLI no longer loads zod: the
   Claude hooks are `claude-hooks.ts`, apart from the adapter.
 - Published to npm as `@humanos-ai/agent-sdk`, with the VIA protocol as the peer `@humanos-ai/via-sdk` (was
@@ -47,7 +47,7 @@ Needs a Humanos platform where an agent key registers an agent with no key and v
   proxy's refusal text as the tool's result. An allowed one carries the call proof in `_meta` (for an `https`
   origin) and is settled when the server answers. `checks(service, tool)` and `runChecked(fn)` keep a call
   checked once when a framework hook also sees it.
-- `routeStdio(spec)` and `humanos-agent proxy --service <name> -- <command> <args…>`: a stdio server entry behind
+- `routeStdio(spec)` and `humanos proxy --service <name> -- <command> <args…>`: a stdio server entry behind
   the governing proxy, as the project's own agent (`via()`). The package now has a `bin`.
 - `McpServerSpec`: the one type an MCP server is named with; `UpstreamSpec` stays as its alias. The proxy's refusal
   text moved to `refusalText`, shared with the connection wrapper.
@@ -62,12 +62,12 @@ Needs a Humanos platform where an agent key registers an agent with no key and v
   (`mcp__<server>__<tool>`) is checked as `<tool>` under its server's service, a built-in tool under
   `Claude Agent SDK`. `sdkServer(options, service?)` declares an in-process server's tools (zod shapes as JSON
   Schema); `mcpServers(servers)` routes stdio entries behind the proxy. `zod` is an optional peer.
-- `humanos-agent init [--framework …] [--yes]`: finds the framework in `package.json` (asks when several, or to
+- `humanos init [--framework …] [--yes]`: finds the framework in `package.json` (asks when several, or to
   confirm; frameworks not supported yet take the custom path), adds the connector's credentials to `.env` empty when
   missing, ignores `.humanos/`, registers the agent, declares `.mcp.json`'s servers, and writes Claude Agent SDK's
   hook commands into `.claude/settings.json` (other frameworks: the lines to add, printed). Every file it changes is
   recorded with a copy of its prior content in `.humanos/init.json`.
-- `humanos-agent restore [--force]`: puts every file `init` changed back byte for byte; one changed since is left
+- `humanos restore [--force]`: puts every file `init` changed back byte for byte; one changed since is left
   and named. `register`, `declare [--mcp <file>] [--entry <module> --framework --service]` and `status` too.
 - `@humanos-ai/agent-sdk/langchain`: `langchain(via?)`. `gate({ service? })` is `createAgent` middleware:
   `wrapToolCall` checks each call (a refusal is an error `ToolMessage`; Humanos unreachable refuses) and settles it
@@ -75,7 +75,7 @@ Needs a Humanos platform where an agent key registers an agent with no key and v
   `guard(tools, service)` wraps tools for a LangGraph `ToolNode`. `mcp.servers` routes `MultiServerMCPClient`'s stdio
   servers behind the proxy; `mcp.tools(client)` records each tool's server and the MCP tool's own name (the client
   prefixes `<server>_`), which is the name checked. `langchain` and `@langchain/core` are optional peers.
-- `humanos-agent hook claude`: the same hooks as a command, for `.claude/settings.json` (the SDK loads it by
+- `humanos hook claude`: the same hooks as a command, for `.claude/settings.json` (the SDK loads it by
   default), so an agent with no Humanos code is governed. The decision waits in `.humanos/pending/` between the two
   hook processes. It fails closed: a `PreToolUse` it cannot check answers deny.
 - `via().mcp.route(spec, via?)` remembers the service it routed, and `checks` answers true for its tools.

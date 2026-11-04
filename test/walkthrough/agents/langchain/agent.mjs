@@ -1,4 +1,4 @@
-// A support agent on LangChain (createAgent), with the lines `humanos-agent init` printed added (marked "Humanos").
+// A support agent on LangChain (createAgent), with the lines `humanos init` printed added (marked "Humanos").
 import { ChatAnthropic } from '@langchain/anthropic';
 import { tool } from '@langchain/core/tools';
 import { createAgent } from 'langchain';

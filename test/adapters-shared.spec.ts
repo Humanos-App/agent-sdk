@@ -100,7 +100,7 @@ describe('routeStdioEntries — a framework’s stdio MCP entries behind the pro
       sse: { transport: 'sse', url: 'https://mcp.example/sse' },
     });
     for (const name of ['claude', 'langchain', 'plain']) {
-      expect(routed[name as 'claude']).toMatchObject({ command: 'npx', args: ['--no-install', 'humanos-agent', 'proxy', '--service', name, '--', 'node', expect.any(String)] });
+      expect(routed[name as 'claude']).toMatchObject({ command: 'npx', args: ['--no-install', 'humanos', 'proxy', '--service', name, '--', 'node', expect.any(String)] });
       expect(scene.via.mcp.checks(name, 'any_tool')).toBe(true);
     }
     expect(routed.langchain).toMatchObject({ env: { TOKEN: 't' }, transport: 'stdio' });

@@ -1,4 +1,4 @@
-// An agent's AI SDK tools, as a module exports them: what `humanos-agent declare --entry` reads.
+// An agent's AI SDK tools, as a module exports them: what `humanos declare --entry` reads.
 import { tool } from 'ai';
 import { z } from 'zod';
 

@@ -4,7 +4,7 @@
  * in-process verifier, so code that talks to the connector (the proxy, `via()`) runs against the test policy.
  *
  * In process it is a `ViaMcpClient`; `serveConnector` puts the same one on HTTP, checking each request's HMAC as the
- * platform does, for agents in another process (a hook, the `humanos-agent proxy` binary). Both record into the same
+ * platform does, for agents in another process (a hook, the `humanos proxy` binary). Both record into the same
  * state, so a test reads one set of decisions whichever process made them. `down` makes every call fail, as when
  * Humanos cannot be reached.
  */

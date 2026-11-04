@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * `humanos-agent` — the agent's Humanos from the terminal: `init` (the framework, `.env`, registering, declaring, the
+ * `humanos` — the agent's Humanos from the terminal: `init` (the framework, `.env`, registering, declaring, the
  * interception), `register`, `declare`, `status`, `restore`, `help`; and what hosts run: `hook claude`, `proxy`. The
  * stdout of `hook` and `proxy` belongs to the host, so they write nothing else there.
  */
@@ -16,9 +16,9 @@ const [command, ...rest] = process.argv.slice(2);
 /** The options that are the CLI's own: what comes after `--` is the command `proxy` runs. */
 const own = rest.includes('--') ? rest.slice(0, rest.indexOf('--')) : rest;
 
-export const HELP = `humanos-agent ${SDK_VERSION}: every tool call your agent makes, checked by Humanos before it runs.
+export const HELP = `humanos ${SDK_VERSION}: every tool call your agent makes, checked by Humanos before it runs.
 
-Usage: npx humanos-agent <command> [options]
+Usage: npx humanos <command> [options]
 
 Commands:
   init       Set Humanos up in this project: finds your framework, checks .env for your API key, registers
@@ -41,11 +41,11 @@ Run by your agent, not by you:
   proxy --service <name> -- <command> [args]  the governing proxy in front of a stdio MCP server
 
 Examples:
-  npx humanos-agent init
-  npx humanos-agent init --framework ai-sdk --yes
-  npx humanos-agent declare --mcp .mcp.json
-  npx humanos-agent status
-  npx humanos-agent restore
+  npx humanos init
+  npx humanos init --framework ai-sdk --yes
+  npx humanos declare --mcp .mcp.json
+  npx humanos status
+  npx humanos restore
 `;
 
 async function main(): Promise<void> {
@@ -94,11 +94,11 @@ async function main(): Promise<void> {
 }
 
 function unknown(): void {
-  process.stderr.write(`humanos-agent: unknown command "${[command, ...rest].join(' ')}"\n\n${HELP}`);
+  process.stderr.write(`humanos: unknown command "${[command, ...rest].join(' ')}"\n\n${HELP}`);
   process.exitCode = 2;
 }
 
 main().catch((e: unknown) => {
-  process.stderr.write(`humanos-agent: ${e instanceof Error ? e.message : String(e)}\n`);
+  process.stderr.write(`humanos: ${e instanceof Error ? e.message : String(e)}\n`);
   process.exitCode = 1;
 });

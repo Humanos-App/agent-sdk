@@ -10,7 +10,7 @@ real Humanos platform. **Walkthroughs** set up an agent from scratch, the way a 
 | Unit | `npm test` | nothing | the guard, keys, connector client, MCP proxy and wrapper, adapters, CLI |
 | Contract | `npm run test:frameworks` | `npm ci` in `test/frameworks` | each adapter in its framework's own agent loop and provider |
 | Live | `npm run test:live` | a test organization's API key; a model key for a real model | the same agents against a real platform |
-| Walkthrough | `npm run walkthrough:setup -- <framework>`, then `npm run walkthrough -- <project> <command>` | as live | `npm install`, `humanos-agent init`, the printed lines, a real agent |
+| Walkthrough | `npm run walkthrough:setup -- <framework>`, then `npm run walkthrough -- <project> <command>` | as live | `npm install`, `humanos init`, the printed lines, a real agent |
 
 ## Unit (`npm test`)
 
@@ -62,7 +62,7 @@ Every driver runs the same scenarios (`test/frameworks/contract.ts`):
 | The live tier's preflight | `live-preflight.test.ts` | 2 |
 
 The two skips are the no-code Claude agent's declaration scenarios: with no Humanos code it declares nothing itself
-(`humanos-agent declare` and the platform's observed tools do). A framework that rethrows a tool's error out of the run
+(`humanos declare` and the platform's observed tools do). A framework that rethrows a tool's error out of the run
 (LangChain's `createAgent`) passes the tool error scenario when the failure is reported.
 
 **Versions.** CI runs the contract at the lockfiles' versions and at each adapter's lowest:
@@ -106,20 +106,20 @@ person's check. The `live` GitHub workflow runs the tier by hand only, with the 
 
 ## Walkthroughs (`npm run walkthrough`)
 
-A new project per framework installs agent-sdk and runs `humanos-agent init`; the agent's code is the lines `init`
+A new project per framework installs agent-sdk and runs `humanos init`; the agent's code is the lines `init`
 prints. The agents are templates in `test/walkthrough/agents/<framework>/`; each asks for one call per case
 (`test/walkthrough/cases.mjs`): `lookup`, `refund`, `discount5`, `discount15`.
 
 1. `npm run walkthrough:setup -- <framework> [dir]` copies the template into a new project, packs this checkout
    (exactly what npm would publish) and installs it with `@humanos-ai/via-sdk` from npm. It prints the next steps.
-2. `npm run walkthrough -- <dir> npx --no-install humanos-agent init` registers the agent and prints its lines (Claude:
+2. `npm run walkthrough -- <dir> npx --no-install humanos init` registers the agent and prints its lines (Claude:
    writes its hooks). The runner hands the command the test credentials from `test/.env` under the product's names,
    never showing them.
 3. For a Worker: `npm run walkthrough -- --dev-vars <dir>` writes its `.dev.vars` (the credentials and the agent's key).
 4. Run the agent: `npm run walkthrough -- <dir> node agent.mjs lookup` (Cloudflare: `node run-cases.mjs lookup …`).
    Every tool is allowed until the agent's policy is set.
 5. Set the new agent's policy in the dashboard (as for the live tier), and run `refund`, `discount5`, `discount15`.
-6. `npm run walkthrough -- <dir> npx --no-install humanos-agent restore`.
+6. `npm run walkthrough -- <dir> npx --no-install humanos restore`.
 
 | Framework | Checked |
 | --- | --- |
@@ -138,7 +138,7 @@ A new agent's tools start at the policy's default: the policy is set per agent.
    shapes, through the adapter, and one agent turn. A `test/frameworks/<framework>.test.ts` runs `runContract` on it.
 3. **A version row**: the framework's lowest supported version in the `lowest` row of `.github/workflows/ci.yml`.
 4. **The live tier**: the driver in the list in `test/live/frameworks.live.test.ts`.
-5. **A walkthrough template**, `test/walkthrough/agents/<framework>/`, and the framework in `humanos-agent init`'s
+5. **A walkthrough template**, `test/walkthrough/agents/<framework>/`, and the framework in `humanos init`'s
    detection (`src/cli/init.ts`) with the lines it prints; a section in `docs/SETUP.md`.
 
 ## When a test fails
@@ -149,7 +149,7 @@ A new agent's tools start at the policy's default: the policy is set per agent.
   `test/harness/model-server.ts`); one the framework hides behind tool search (Claude) is never offered.
 - **Live**: the preflight names any tool whose access is not as expected. A real model may not call the tool; the tier
   retries once (`vitest.live.config.ts`).
-- **Walkthrough**: `humanos-agent status` in the project shows what the platform has for the agent: its tools and each
+- **Walkthrough**: `humanos status` in the project shows what the platform has for the agent: its tools and each
   one's access.
 
 ## File map

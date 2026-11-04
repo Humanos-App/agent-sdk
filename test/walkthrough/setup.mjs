@@ -34,6 +34,6 @@ run('npm', ['install', '--silent', `./${tarball}`, '@humanos-ai/via-sdk'], dir);
 
 process.stdout.write(`walkthrough: ${framework} agent ready in ${dir}
 Next (from the agent-sdk checkout):
-  npm run walkthrough -- ${dir} npx --no-install humanos-agent init
-${framework === 'cloudflare' ? `  npm run walkthrough -- --dev-vars ${dir}\n  npm run walkthrough -- ${dir} node run-cases.mjs lookup refund discount5 discount15\n` : framework === 'claude-agent-sdk' ? `  npm run walkthrough -- ${dir} node agent.mjs\n` : `  npm run walkthrough -- ${dir} node agent.mjs <lookup|refund|discount5|discount15>\n`}  npm run walkthrough -- ${dir} npx --no-install humanos-agent restore
+  npm run walkthrough -- ${dir} npx --no-install humanos init
+${framework === 'cloudflare' ? `  npm run walkthrough -- --dev-vars ${dir}\n  npm run walkthrough -- ${dir} node run-cases.mjs lookup refund discount5 discount15\n` : framework === 'claude-agent-sdk' ? `  npm run walkthrough -- ${dir} node agent.mjs\n` : `  npm run walkthrough -- ${dir} node agent.mjs <lookup|refund|discount5|discount15>\n`}  npm run walkthrough -- ${dir} npx --no-install humanos restore
 `);

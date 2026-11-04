@@ -51,7 +51,7 @@ describe('claudeHooks — how a Claude call is named, checked and settled', () =
   });
 });
 
-describe('humanos-agent hook claude', () => {
+describe('humanos hook claude', () => {
   it('denies a PreToolUse it cannot read, or cannot reach Humanos for', async () => {
     expect(JSON.parse(await claudeHookCommand('not json')).hookSpecificOutput.permissionDecision).toBe('deny');
     const out = JSON.parse(await claudeHookCommand(JSON.stringify(pre('Bash')), { env: {}, dir: '/nonexistent/.humanos' }));

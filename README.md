@@ -22,13 +22,13 @@ For complete, runnable agents built on it, see
 | **`McpGuardVerifier`**, **`policyMandates`** | the connector as the guard's verifier, and the mandate each call presents, from the policy (`getPolicy`) and the mandates held (`getMandates`) |
 | **`requestMandate`**, **`waitForMandate`** | ask a person for a mandate a tool needs, under a control `getAction` describes or as a one-call authorization, and wait for their answer (`mandateStatus`) |
 | **`startViaMcpProxy`** | a governing proxy in front of MCP servers you did not write; `refresh()` declares their new tools |
-| **`@humanos-ai/agent-sdk/mcp`**, **`via().mcp`** | the connection wrapper: an MCP client transport with every `tools/list` declared and every `tools/call` checked, the proxy inside the agent's process; `routeStdio` puts a stdio server entry behind the proxy, which `humanos-agent proxy` runs |
+| **`@humanos-ai/agent-sdk/mcp`**, **`via().mcp`** | the connection wrapper: an MCP client transport with every `tools/list` declared and every `tools/call` checked, the proxy inside the agent's process; `routeStdio` puts a stdio server entry behind the proxy, which `humanos proxy` runs |
 | **`registerAgent`** | register the agent's key with the organization, and optionally its tools; Humanos grades how the key is held and answers the agent's DID. With `humanosHoldsKey`, Humanos mints the key and holds it |
 | **`declareTools`** | tell Humanos which tools an agent can call, each as its server describes it, one call per service |
 | **`@humanos-ai/agent-sdk/ai-sdk`** — `aiSdk()` | Vercel AI SDK 5 and later (so Cloudflare Agents and OpenRouter as a provider): `guard(tools, service)` gives the `ToolSet` back with each `execute` verified first, and declares the tools with their JSON Schema |
-| **`@humanos-ai/agent-sdk/claude-agent-sdk`** — `claudeAgentSdk()` | Claude Agent SDK: `gate()` gives the `PreToolUse` / `PostToolUse` hooks that check and settle every call, built-in tools included; `sdkServer` declares an in-process server's tools; `mcpServers` routes stdio servers behind the proxy. With no code, `humanos-agent hook claude` runs the same hooks from `.claude/settings.json` |
+| **`@humanos-ai/agent-sdk/claude-agent-sdk`** — `claudeAgentSdk()` | Claude Agent SDK: `gate()` gives the `PreToolUse` / `PostToolUse` hooks that check and settle every call, built-in tools included; `sdkServer` declares an in-process server's tools; `mcpServers` routes stdio servers behind the proxy. With no code, `humanos hook claude` runs the same hooks from `.claude/settings.json` |
 | **`@humanos-ai/agent-sdk/langchain`** — `langchain()` | LangChain 1.x and LangGraph: `gate()` is `createAgent` middleware that checks every tool call and declares the agent's tools; `guard(tools, service)` for a graph's own `ToolNode`; `mcp.servers` / `mcp.tools` for `MultiServerMCPClient` |
-| **`humanos-agent`** (bin) | `init` (the framework, `.env`, registering, declaring `.mcp.json`, the interception; for Claude Agent SDK the hooks in `.claude/settings.json`, for the others the lines to add), `register`, `declare`, `status`, `restore` (every file `init` changed put back), and what hosts run: `hook claude`, `proxy` |
+| **`humanos`** (bin) | `init` (the framework, `.env`, registering, declaring `.mcp.json`, the interception; for Claude Agent SDK the hooks in `.claude/settings.json`, for the others the lines to add), `register`, `declare`, `status`, `restore` (every file `init` changed put back), and what hosts run: `hook claude`, `proxy` |
 | **`ToolRegistry`** | every tool a process hands its adapters, declared as one list per service, again only when a service's list changes |
 | **`startViaMcpServer`** | expose a guarded agent's tools to an MCP host |
 | **`extractFromToolsList`**, **`importActionDraft`** | turn an existing tool surface into a draft action for the organization |
@@ -47,7 +47,7 @@ Requires Node.js 22 or later. The framework adapters load their framework from t
 ## Use
 
 Setting it up in Claude Agent SDK, Vercel AI SDK, OpenRouter, LangChain, LangGraph or Cloudflare Agents, with
-`npx humanos-agent init`: [docs/SETUP.md](docs/SETUP.md).
+`npx humanos init`: [docs/SETUP.md](docs/SETUP.md).
 
 ```ts
 import { createViaMcpClient, McpGuardVerifier, policyMandates, registerAgent, storedSoftwareKey, ViaGuard, ViaDeniedError } from '@humanos-ai/agent-sdk';
