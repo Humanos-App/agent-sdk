@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
  * `humanos-agent` — the agent's Humanos from the terminal: `init` (the framework, `.env`, registering, declaring, the
- * interception), `register`, `declare`, `status`, `restore`; and what hosts run: `hook claude`, `proxy`. The stdout of
- * `hook` and `proxy` belongs to the host, so they write nothing else there.
+ * interception), `register`, `declare`, `status`, `restore`, `help`; and what hosts run: `hook claude`, `proxy`. The
+ * stdout of `hook` and `proxy` belongs to the host, so they write nothing else there.
  */
 import { declareCommand, registerCommand, statusCommand } from '../cli/agent.js';
 import { processContext } from '../cli/context.js';
@@ -10,20 +10,54 @@ import { claudeHookCommand } from '../cli/hook.js';
 import { initCommand, restoreCommand } from '../cli/init.js';
 import { startProxyCommand } from '../cli/proxy.js';
 import { createStdioTransport } from '../mcp/stdio.js';
+import { SDK_VERSION } from '../version.js';
 
 const [command, ...rest] = process.argv.slice(2);
+/** The options that are the CLI's own: what comes after `--` is the command `proxy` runs. */
+const own = rest.includes('--') ? rest.slice(0, rest.indexOf('--')) : rest;
 
-const USAGE = [
-  'usage: humanos-agent init [--framework ai-sdk|claude-agent-sdk|langchain|custom] [--yes]',
-  '       humanos-agent register',
-  '       humanos-agent declare [--mcp <file>] [--entry <module> --framework ai-sdk|langchain --service <name> [--export <name>]]',
-  '       humanos-agent status',
-  '       humanos-agent restore [--force]',
-  '       humanos-agent hook claude              (run by Claude Agent SDK from .claude/settings.json)',
-  '       humanos-agent proxy --service <name> -- <command> [args…]   (run by a routed MCP entry)',
-].join('\n');
+export const HELP = `humanos-agent ${SDK_VERSION}: every tool call your agent makes, checked by Humanos before it runs.
+
+Usage: npx humanos-agent <command> [options]
+
+Commands:
+  init       Set Humanos up in this project: finds your framework, checks .env for your API key, registers
+             the agent, declares the MCP servers in .mcp.json, and installs the checks (Claude Agent SDK:
+             hooks in .claude/settings.json; other frameworks: the lines to add, printed).
+               --framework ai-sdk|claude-agent-sdk|langchain|custom   skip the question
+               --yes                                                  do not ask when there is one answer
+  register   Register the agent's key (created on the first run) and show its DID and grade.
+  declare    Declare tools to Humanos.
+               --mcp <file>                       the servers in an MCP config file (default .mcp.json)
+               --entry <module> --framework ai-sdk|langchain --service <name> [--export <name>]
+                                                  the tools a module exports
+  status     Show the agent and each declared tool's access under its policy.
+  restore    Undo every file change init made, from its backups; the agent's key stays.
+               --force                            also put back a file changed since init
+  help       Show this help (also --help, -h, or <command> --help). --version shows the version.
+
+Run by your agent, not by you:
+  hook claude                                 Claude Agent SDK's hook, from .claude/settings.json
+  proxy --service <name> -- <command> [args]  the governing proxy in front of a stdio MCP server
+
+Examples:
+  npx humanos-agent init
+  npx humanos-agent init --framework ai-sdk --yes
+  npx humanos-agent declare --mcp .mcp.json
+  npx humanos-agent status
+  npx humanos-agent restore
+`;
 
 async function main(): Promise<void> {
+  if (command === undefined || command === 'help' || command === '--help' || command === '-h' || own.includes('--help')) {
+    process.stdout.write(HELP);
+    if (command === undefined) process.exitCode = 2; // nothing to do: the help, as an error
+    return;
+  }
+  if (command === '--version' || command === '-v') {
+    process.stdout.write(`${SDK_VERSION}\n`);
+    return;
+  }
   const ctx = processContext();
   switch (command) {
     case 'init':
@@ -47,7 +81,7 @@ async function main(): Promise<void> {
       return;
     }
     case 'hook': {
-      if (rest[0] !== 'claude') return usage();
+      if (rest[0] !== 'claude') return unknown();
       const chunks: Buffer[] = [];
       for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
       // A PreToolUse that fails here must still answer deny: a hook command that errors is let through.
@@ -55,12 +89,12 @@ async function main(): Promise<void> {
       return;
     }
     default:
-      return usage();
+      return unknown();
   }
 }
 
-function usage(): void {
-  process.stderr.write(`${USAGE}\n`);
+function unknown(): void {
+  process.stderr.write(`humanos-agent: unknown command "${[command, ...rest].join(' ')}"\n\n${HELP}`);
   process.exitCode = 2;
 }
 

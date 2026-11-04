@@ -116,9 +116,45 @@ describe('humanos-agent init — the other paths', () => {
     expect(said.join('\n')).toContain('Found Mastra: not supported yet');
   });
 
+  it('--yes with more than one framework: refuses to pick, naming --framework, even in a terminal', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agent-project-'));
+    write(dir, 'package.json', JSON.stringify({ dependencies: { ai: '7', langchain: '1' } }));
+    const { ctx } = context(dir, { via: { env: {} }, ask: async () => '1' });
+    await expect(initCommand(['--yes'], ctx)).rejects.toThrow(/more than one framework found .*pass --framework/);
+  });
+
+  it('a wrong answer to the framework question is asked again, not taken as custom', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agent-project-'));
+    write(dir, 'package.json', JSON.stringify({ dependencies: { ai: '7', langchain: '1' } }));
+    const answers = ['9', 'two', '1'];
+    const { ctx, said } = context(dir, { via: { env: {} }, ask: async () => answers.shift()! });
+    expect((await initCommand([], ctx)).framework).toBe('ai-sdk');
+    expect(said.filter((l) => l.startsWith('Answer with a number'))).toHaveLength(2);
+  });
+
   it('withClaudeHooks adds each hook once, and changes nothing the second time', () => {
     const once = withClaudeHooks(undefined)!;
     expect(withClaudeHooks(once)).toBeUndefined();
+  });
+});
+
+describe('humanos-agent restore — only what init could have written', () => {
+  it('a record pointing outside the project is not followed', async () => {
+    const scene = await agentScene({});
+    write(scene.dir, 'package.json', JSON.stringify({ dependencies: { ai: '7' } }));
+    const { ctx, said } = context(scene.dir);
+    await initCommand(['--yes'], ctx);
+    const outside = join(mkdtempSync(join(tmpdir(), 'not-the-project-')), 'keep.txt');
+    writeFileSync(outside, 'keep me');
+    const manifestFile = join(scene.dir, '.humanos', 'init.json');
+    const manifest = JSON.parse(read(scene.dir, '.humanos/init.json'));
+    manifest.changes.push({ file: outside, existed: false, after: 'x' }, { file: '../escape.txt', existed: false, after: 'x' });
+    writeFileSync(manifestFile, JSON.stringify(manifest));
+    const { restored } = await restoreCommand(['--force'], ctx);
+    expect(restored).toEqual(['.gitignore']);
+    expect(read(outside, '')).toBe('keep me');
+    expect(said.join('\n')).toContain('not a file init changed in this project');
+    await scene.close();
   });
 });
 
@@ -126,7 +162,7 @@ describe('humanos-agent declare and status', () => {
   it('declare --entry: a module’s AI SDK tools, with their schemas', async () => {
     const scene = await agentScene({});
     const { ctx } = context(scene.dir);
-    const entry = fileURLToPath(new URL('./harness/ai-tools.mjs', import.meta.url));
+    const entry = fileURLToPath(new URL('./fixtures/ai-tools.mjs', import.meta.url));
     await declareCommand(['--entry', entry, '--framework', 'ai-sdk', '--service', 'Support desk'], ctx);
     const d = scene.humanos.declared.find((x) => x.services.includes('Support desk'))!;
     expect(d.tools.map((t) => t.name)).toEqual(['lookup_order', 'issue_refund']);

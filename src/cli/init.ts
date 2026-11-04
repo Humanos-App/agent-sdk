@@ -10,7 +10,7 @@
  */
 import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmdirSync, rmSync, writeFileSync } from 'node:fs';
-import { basename, dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { agentDir, environment } from '../via.js';
 import { declareCommand, registerCommand } from './agent.js';
 import { flag, parseFlags, type CliContext } from './context.js';
@@ -160,14 +160,26 @@ async function chooseFramework(ctx: CliContext, given: Framework | undefined, ye
   for (const n of notYet) ctx.out(`Found ${n}: not supported yet, so it takes the custom path.`);
   if (supported.length === 1 && (yes || !ctx.ask)) return supported[0]!.framework;
   if (!supported.length && (yes || !ctx.ask)) return 'custom';
-  if (!ctx.ask) throw new Error(`more than one framework found (${supported.map((s) => s.name).join(', ')}): pass --framework`);
+  // More than one: `--yes` cannot pick for you, and nobody can answer without a terminal.
+  if (yes || !ctx.ask) throw new Error(`more than one framework found (${supported.map((s) => s.name).join(', ')}): pass --framework`);
   const options: { framework: Framework; name: string }[] = [...supported, { framework: 'custom', name: 'Custom (my own code)' }];
   if (supported.length === 1) {
     const answer = await ctx.ask(`This agent is built on ${supported[0]!.name}? [Y/n]`);
     if (!/^n/i.test(answer)) return supported[0]!.framework;
   }
-  const answer = await ctx.ask(`Which framework is the agent built on?\n${options.map((o, i) => `  ${i + 1}. ${o.name}`).join('\n')}\n>`);
-  return options[Number(answer) - 1]?.framework ?? 'custom';
+  const question = `Which framework is the agent built on?\n${options.map((o, i) => `  ${i + 1}. ${o.name}`).join('\n')}\n>`;
+  for (let tries = 0; tries < 3; tries++) {
+    const choice = options[Number(await ctx.ask(question)) - 1];
+    if (choice) return choice.framework;
+    ctx.out(`Answer with a number from 1 to ${options.length}.`);
+  }
+  throw new Error('no framework chosen: pass --framework');
+}
+
+/** True when `path` is inside `dir` (never `dir` itself, never outside it). */
+function inside(dir: string, path: string): boolean {
+  const r = relative(resolve(dir), resolve(path));
+  return !!r && !r.startsWith('..') && !isAbsolute(r);
 }
 
 /** The settings with Humanos's hook commands added for each event, once; every other setting and hook kept. */
@@ -233,6 +245,12 @@ export async function restoreCommand(argv: string[], ctx: CliContext): Promise<{
   const kept: Change[] = [];
   for (const c of manifest.changes) {
     const path = resolve(ctx.cwd, c.file);
+    // Only what `init` could have written: a file in the project, its copy in the agent's directory. A record that
+    // points anywhere else is not followed.
+    if (!inside(ctx.cwd, path) || (c.backup !== undefined && !inside(home, join(home, c.backup)))) {
+      ctx.err(`${c.file}: not a file init changed in this project; left as it is`);
+      continue;
+    }
     if (existsSync(path) && sha(path) !== c.after && !force) {
       kept.push(c);
       ctx.err(`${c.file} changed since init: left as it is (restore it with --force)`);
