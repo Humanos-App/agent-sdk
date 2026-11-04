@@ -1,9 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.4.3
 
-Needs a Humanos platform where an agent key registers an agent with no key and verifies its calls without a proof
-(v0.3 §16.14). Released once the platform serving it is deployed.
+`registerAgent(client, humanosHoldsKey)` and a guard with no key need a Humanos platform where an agent key registers
+an agent with no key and verifies its calls without a proof (v0.3 §16.14), which production does not serve yet.
+Everything else in this release works on production today.
 
 - `registerAgent(client, humanosHoldsKey)`: Humanos mints the agent's key and holds it, for an agent with no secure
   place to keep one. Only under an agent key issued for this agent; the organization's API key is refused
@@ -18,6 +19,94 @@ Needs a Humanos platform where an agent key registers an agent with no key and v
 - `createTestVerifier` without `agentKey`: calls with no proof are decided as the connector decides them under an
   agent key, and one with a proof is `pop_invalid`. With `agentKey`, a call with no proof throws, as the connector
   refuses it.
+
+- `humanos help` (also `--help`, `-h`, `<command> --help`) lists every command with examples; `--version`.
+- The adapters share one check (failing closed, one set of words for a refusal), one run that reports the outcome
+  once, and one routing of stdio MCP entries (`src/adapters/shared.ts`). With it: LangChain's `gate` no longer
+  reports a call twice when reporting its outcome fails, and LangChain's `guard` reports a tool that answers with an
+  error `ToolMessage` as failed.
+- `humanos init --yes` with more than one framework refuses to pick, naming `--framework`; a wrong answer to the
+  question is asked again. `restore` follows only records of files in the project. The CLI no longer loads zod: the
+  Claude hooks are `claude-hooks.ts`, apart from the adapter.
+- `humanos init` keeps the framework answer in `.humanos/init.json`: a run that stopped for `.env`, and every run
+  after, does not ask again (`--framework` changes it; `restore` forgets it). It names OpenRouter and Cloudflare
+  Agents projects by their own names, not "Vercel AI SDK". The lines it prints say which one changes the agent's
+  existing call (`tools: humanos.guard(tools, '<service>')`, LangChain's `middleware`), name the package as the
+  service, and say what a service is. For Claude Agent SDK it says a Claude Code session in the folder is checked
+  too. `register` drops the `graded:` line, and says so only when Humanos registered the key below what it claimed.
+- Published to npm as `@humanos-ai/agent-sdk`, with the VIA protocol as the peer `@humanos-ai/via-sdk` (was
+  `@humanos/agent-sdk` and `@humanos/via-sdk-v03`, installed from GitHub): `npm install @humanos-ai/agent-sdk
+  @humanos-ai/via-sdk`. A GitHub Release published by hand is the only thing that publishes (the `release` workflow,
+  after the whole CI). The client's version is package.json's, written at build.
+- Node.js 22 or later (was 20): AI SDK 7 and its providers require it, and Node 20 reached end of life in April
+  2026. CI runs 22 and 24, as via-sdk's does.
+- `ViaGuard.check(tool, args)` and `ViaGuard.settle(checked, { error? })`: `call` in two halves, for a framework that
+  decides a call in one hook and runs the tool itself. `settle` takes the check or its plain `decisionId` and
+  `mandateId`, so a hook in another process can report. `call` is now `check`, run, `settle`, unchanged.
+- `via(options?)`: the agent's Humanos from its environment (`HUMANOS_API_KEY`, `HUMANOS_SIGNATURE_SECRET`,
+  `HUMANOS_MCP_URL`, `HUMANOS_AGENT_KEY`, `HUMANOS_DIR`, over the working directory's `.env`): the connector, the key,
+  the DID (registering the key when it has none; `registration` then holds what registering answered), the guard
+  and the tool registry. One per process without options.
+- `softwareKeyFromJson(json)`: `storedSoftwareKey`'s key from the key file's content, for an agent with no disk.
+- `@humanos-ai/agent-sdk/mcp` and `via().mcp`: `transport(service, inner, { origin? })` wraps an MCP client transport
+  (AI SDK's `MCPTransport`, the MCP SDK's `Transport`). Each `tools/list` answer is declared under `service`; each
+  `tools/call` is checked before it is sent. A refused call never leaves the process, and the framework gets the
+  proxy's refusal text as the tool's result. An allowed one carries the call proof in `_meta` (for an `https`
+  origin) and is settled when the server answers. `checks(service, tool)` and `runChecked(fn)` keep a call
+  checked once when a framework hook also sees it.
+- `routeStdio(spec)` and `humanos proxy --service <name> -- <command> <args…>`: a stdio server entry behind
+  the governing proxy, as the project's own agent (`via()`). The package now has a `bin`.
+- `McpServerSpec`: the one type an MCP server is named with; `UpstreamSpec` stays as its alias. The proxy's refusal
+  text moved to `refusalText`, shared with the connection wrapper.
+- `@humanos-ai/agent-sdk/ai-sdk`: `aiSdk(via?)`. `guard(tools, service)` hands a `ToolSet` back with each `execute`
+  checked, run and settled (a refusal throws, and AI SDK gives the model the error); it declares the tools, their
+  schemas through AI SDK's `asSchema`. A tool with no `execute`, or one a wrapped connection or routed service
+  checks, is left as it is. `ai` is an optional peer (>=5). Passes the contract through `generateText` and
+  `streamText`, with MCP over `@ai-sdk/mcp`.
+- `@humanos-ai/agent-sdk/claude-agent-sdk`: `claudeAgentSdk(via?)`. `gate(existing?)` gives `PreToolUse` (check;
+  refuse with the reason, or say nothing so the agent's own permissions decide; `onFailure: 'block'`),
+  `PostToolUse` and `PostToolUseFailure` (settle), ahead of the agent's own hooks. An MCP tool
+  (`mcp__<server>__<tool>`) is checked as `<tool>` under its server's service, a built-in tool under
+  `Claude Agent SDK`. `sdkServer(options, service?)` declares an in-process server's tools (zod shapes as JSON
+  Schema); `mcpServers(servers)` routes stdio entries behind the proxy. `zod` is an optional peer.
+- `humanos init [--framework …] [--yes]`: finds the framework in `package.json` (asks when several, or to
+  confirm; frameworks not supported yet take the custom path), adds the connector's credentials to `.env` empty when
+  missing, ignores `.humanos/`, registers the agent, declares `.mcp.json`'s servers, and writes Claude Agent SDK's
+  hook commands into `.claude/settings.json` (other frameworks: the lines to add, printed). Every file it changes is
+  recorded with a copy of its prior content in `.humanos/init.json`.
+- `humanos restore [--force]`: puts every file `init` changed back byte for byte; one changed since is left
+  and named. `register`, `declare [--mcp <file>] [--entry <module> --framework --service]` and `status` too.
+- `@humanos-ai/agent-sdk/langchain`: `langchain(via?)`. `gate({ service? })` is `createAgent` middleware:
+  `wrapToolCall` checks each call (a refusal is an error `ToolMessage`; Humanos unreachable refuses) and settles it
+  from the `ToolMessage` the tool answered; `wrapModelCall` declares the agent's tools on its first model call.
+  `guard(tools, service)` wraps tools for a LangGraph `ToolNode`. `mcp.servers` routes `MultiServerMCPClient`'s stdio
+  servers behind the proxy; `mcp.tools(client)` records each tool's server and the MCP tool's own name (the client
+  prefixes `<server>_`), which is the name checked. `langchain` and `@langchain/core` are optional peers.
+- `humanos hook claude`: the same hooks as a command, for `.claude/settings.json` (the SDK loads it by
+  default), so an agent with no Humanos code is governed. The decision waits in `.humanos/pending/` between the two
+  hook processes. It fails closed: a `PreToolUse` it cannot check answers deny.
+- `via().mcp.route(spec, via?)` remembers the service it routed, and `checks` answers true for its tools.
+- `via({ cwd })`: the project `.env` and `.humanos` are read from.
+- The live tier (`npm run test:live`, the by-hand `live` workflow): the framework drivers on a real model against
+  a real platform (dev, or a local stack with `HUMANOS_LIVE_MCP_URL`). Its preflight declares the live tools and,
+  until the test organization's policy gives them Allow, Deny and Restrict (a control keeping `percent` under 10),
+  fails naming what to set in the dashboard. Each framework: an allowed call runs and its outcome is recorded, a
+  denied one never runs, a restricted one runs within the limit and is refused `policy_denied` over it.
+- Cloudflare Agents tested in the Workers runtime: an `Agent` (a Durable Object) run by workerd through wrangler, its
+  tools through the AI SDK adapter. agent-sdk runs under `nodejs_compat`; a Worker has no disk, so the agent's key
+  comes from a secret (`HUMANOS_AGENT_KEY`) handed to `via({ env })` with the connector's credentials.
+- OpenRouter tested as an AI SDK provider (`@openrouter/ai-sdk-provider`): the scripted model also speaks the
+  OpenAI-compatible Chat Completions API, so the contract runs over OpenRouter's wire; the live tier runs it on a real
+  OpenRouter model with `OPENROUTER_API_KEY`.
+- Tested at each adapter's lowest version too (a CI matrix: latest, lowest, AI SDK 6): AI SDK 5.0.0, 6.0.0 and 7;
+  LangChain `langchain` 1.0.1 with `@langchain/core` 1.0.1; Claude Agent SDK 0.3.142 and 0.3.317. The LangChain peers
+  are `^1.0.1`, the lowest that installs consistently.
+- Framework tests (`npm run test:frameworks`, a CI job of its own): a scripted Anthropic model server, a fake
+  connector on `createTestVerifier` (in process, and on HTTP with the request signature checked), the support desk's
+  MCP server over stdio and HTTP, and the contract every framework driver must pass. The first driver is an agent
+  written straight on `@anthropic-ai/sdk`, through `via()`, the guard and `via().mcp`.
+- `ToolRegistry`: declares every tool added, as one list per service, so tool sets of one service added apart do
+  not replace each other on the platform.
 
 ## 0.4.2
 

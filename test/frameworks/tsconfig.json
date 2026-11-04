@@ -1,0 +1,7 @@
+{
+  // The framework tests, typechecked apart: their frameworks are installed here (`npm ci` in this folder), not in
+  // the package, so the root check-types does not need them.
+  "extends": "../../tsconfig.json",
+  "include": ["./**/*.ts", "../harness", "../live", "../../src"],
+  "exclude": []
+}

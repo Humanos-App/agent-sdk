@@ -1,4 +1,4 @@
-import type { EventType } from '@humanos/via-sdk-v03';
+import type { EventType } from '@humanos-ai/via-sdk';
 import type { AgentOutcomeKind } from './sdk.js';
 
 /**

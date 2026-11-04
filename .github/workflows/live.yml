@@ -1,0 +1,28 @@
+name: live
+
+# By hand only (Actions, then live, then Run workflow): the framework drivers on a real model against the dev
+# platform, as the test organization's agent. It spends model tokens, so it never runs on a schedule or a push.
+# Needs the repository secrets HUMANOS_LIVE_API_KEY, HUMANOS_LIVE_SIGNATURE_SECRET (the test organization's API key on
+# dev), HUMANOS_LIVE_AGENT_KEY (the agent's key file, so every run is the same agent) and ANTHROPIC_API_KEY.
+on:
+  workflow_dispatch:
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    env:
+      HUMANOS_LIVE_API_KEY: ${{ secrets.HUMANOS_LIVE_API_KEY }}
+      HUMANOS_LIVE_SIGNATURE_SECRET: ${{ secrets.HUMANOS_LIVE_SIGNATURE_SECRET }}
+      HUMANOS_LIVE_AGENT_KEY: ${{ secrets.HUMANOS_LIVE_AGENT_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      # Without its secrets the tier skips every test and passes: here that is a failure.
+      - run: test -n "$HUMANOS_LIVE_API_KEY" && test -n "$HUMANOS_LIVE_SIGNATURE_SECRET" && test -n "$HUMANOS_LIVE_AGENT_KEY" && test -n "$ANTHROPIC_API_KEY"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm ci
+        working-directory: test/frameworks
+      - run: npm run test:live

@@ -1,0 +1,7 @@
+{
+  "name": "walkthrough-openrouter",
+  "private": true,
+  "type": "module",
+  "description": "A support agent on OpenRouter through Vercel AI SDK, with the lines humanos init prints.",
+  "dependencies": { "@openrouter/ai-sdk-provider": "^3.1.0", "ai": "^7.0.162", "zod": "^4.6.7" }
+}

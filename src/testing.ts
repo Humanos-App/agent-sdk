@@ -1,5 +1,5 @@
 /**
- * `@humanos/agent-sdk/testing` — an in-process verifier for testing an agent without a platform.
+ * `@humanos-ai/agent-sdk/testing` — an in-process verifier for testing an agent without a platform.
  *
  * It answers the guard's three calls the way the Humanos connector does, where an agent can tell
  * the difference: a nonce per call, the PoP checked against the agent's key and the hash of THIS

@@ -1,11 +1,11 @@
-# @humanos/agent-sdk
+# @humanos-ai/agent-sdk
 
 Put an AI agent under its organization's **policy**, and a **mandate** where the policy asks for one: a signed,
 bounded permission a person grants. The agent holds its own key; every tool call is proved with it and verified by
 Humanos *before* the tool runs, and every decision and outcome is written to a signed, hash-chained record.
 
 The VIA protocol itself — credentials, events, verification — is
-[`@humanos/via-sdk-v03`](https://github.com/Humanos-App), a peer dependency. This package is the
+[`@humanos-ai/via-sdk`](https://github.com/Humanos-App), a peer dependency. This package is the
 agent's side of the wire.
 
 For complete, runnable agents built on it, see
@@ -15,38 +15,42 @@ For complete, runnable agents built on it, see
 
 | | |
 |---|---|
-| **Keys** — `storedSoftwareKey`, `softwareKey`, `deviceSelfKey`, `custodialKey`, `attestedKey`, `humanosHoldsKey` | where the agent's key lives, and the evidence Humanos grades it on (v0.3 §16). `storedSoftwareKey` keeps the key in a file across restarts; `softwareKey` lasts only as long as the process; `humanosHoldsKey` has Humanos hold it |
-| **`ViaGuard`** | the gate around every tool call: the mandate it presents, if any → challenge → proof of possession → verify → run or refuse → report the outcome |
+| **Keys** — `storedSoftwareKey`, `softwareKeyFromJson`, `softwareKey`, `deviceSelfKey`, `custodialKey`, `attestedKey`, `humanosHoldsKey` | where the agent's key lives, and the evidence Humanos grades it on (v0.3 §16). `storedSoftwareKey` keeps the key in a file across restarts, `softwareKeyFromJson` reads that file's content from a variable where no file persists; `softwareKey` lasts only as long as the process; `humanosHoldsKey` has Humanos hold it |
+| **`via`** | the agent's Humanos from its environment: the connector, the key (`HUMANOS_AGENT_KEY` or `.humanos/agent-key.json`), the DID, the guard and the tool registry, one per process |
+| **`ViaGuard`** | the gate around every tool call: the mandate it presents, if any → challenge → proof of possession → verify → run or refuse → report the outcome. `check` and `settle` split it for a framework that runs the tool itself |
 | **`createViaMcpClient`** | the Humanos connector, authenticated with an API key and its signing secret: the organization's, or an agent key issued for one agent |
 | **`McpGuardVerifier`**, **`policyMandates`** | the connector as the guard's verifier, and the mandate each call presents, from the policy (`getPolicy`) and the mandates held (`getMandates`) |
 | **`requestMandate`**, **`waitForMandate`** | ask a person for a mandate a tool needs, under a control `getAction` describes or as a one-call authorization, and wait for their answer (`mandateStatus`) |
 | **`startViaMcpProxy`** | a governing proxy in front of MCP servers you did not write; `refresh()` declares their new tools |
+| **`@humanos-ai/agent-sdk/mcp`**, **`via().mcp`** | the connection wrapper: an MCP client transport with every `tools/list` declared and every `tools/call` checked, the proxy inside the agent's process; `routeStdio` puts a stdio server entry behind the proxy, which `humanos proxy` runs |
 | **`registerAgent`** | register the agent's key with the organization, and optionally its tools; Humanos grades how the key is held and answers the agent's DID. With `humanosHoldsKey`, Humanos mints the key and holds it |
 | **`declareTools`** | tell Humanos which tools an agent can call, each as its server describes it, one call per service |
+| **`@humanos-ai/agent-sdk/ai-sdk`** — `aiSdk()` | Vercel AI SDK 5 and later (so Cloudflare Agents and OpenRouter as a provider): `guard(tools, service)` gives the `ToolSet` back with each `execute` verified first, and declares the tools with their JSON Schema |
+| **`@humanos-ai/agent-sdk/claude-agent-sdk`** — `claudeAgentSdk()` | Claude Agent SDK: `gate()` gives the `PreToolUse` / `PostToolUse` hooks that check and settle every call, built-in tools included; `sdkServer` declares an in-process server's tools; `mcpServers` routes stdio servers behind the proxy. With no code, `humanos hook claude` runs the same hooks from `.claude/settings.json` |
+| **`@humanos-ai/agent-sdk/langchain`** — `langchain()` | LangChain 1.x and LangGraph: `gate()` is `createAgent` middleware that checks every tool call and declares the agent's tools; `guard(tools, service)` for a graph's own `ToolNode`; `mcp.servers` / `mcp.tools` for `MultiServerMCPClient` |
+| **`humanos`** (bin) | `init` (the framework, `.env`, registering, declaring `.mcp.json`, the interception; for Claude Agent SDK the hooks in `.claude/settings.json`, for the others the lines to add), `register`, `declare`, `status`, `restore` (every file `init` changed put back), and what hosts run: `hook claude`, `proxy` |
+| **`ToolRegistry`** | every tool a process hands its adapters, declared as one list per service, again only when a service's list changes |
 | **`startViaMcpServer`** | expose a guarded agent's tools to an MCP host |
 | **`extractFromToolsList`**, **`importActionDraft`** | turn an existing tool surface into a draft action for the organization |
-| **`@humanos/agent-sdk/testing`** | `createTestVerifier`: an in-process verifier for testing an agent offline |
+| **`@humanos-ai/agent-sdk/testing`** | `createTestVerifier`: an in-process verifier for testing an agent offline |
 
 ## Install
 
-Neither package is on a registry yet. Install both from this repository, pinned to a release tag:
-
-```json
-{
-  "dependencies": {
-    "@humanos/agent-sdk": "github:Humanos-App/agent-sdk#v0.4.2",
-    "@humanos/via-sdk-v03": "https://raw.githubusercontent.com/Humanos-App/agent-sdk/v0.4.2/vendor/humanos-via-sdk-v03-0.8.0.tgz"
-  }
-}
+```
+npm install @humanos-ai/agent-sdk @humanos-ai/via-sdk
 ```
 
-npm clones the tagged commit and builds it (`prepare`), so a first install takes a few seconds
-longer than a registry package. Requires Node.js 20 or later and `git`.
+`@humanos-ai/via-sdk` is the VIA protocol, a peer, so an agent that also verifies things itself shares one copy.
+Requires Node.js 22 or later. The framework adapters load their framework from the agent's own dependencies:
+`ai` for `./ai-sdk`, `langchain` and `@langchain/core` for `./langchain`, `zod` for `./claude-agent-sdk`.
 
 ## Use
 
+Setting it up in Claude Agent SDK, Vercel AI SDK, OpenRouter, LangChain, LangGraph or Cloudflare Agents, with
+`npx humanos init`: [docs/SETUP.md](docs/SETUP.md).
+
 ```ts
-import { createViaMcpClient, McpGuardVerifier, policyMandates, registerAgent, storedSoftwareKey, ViaGuard, ViaDeniedError } from '@humanos/agent-sdk';
+import { createViaMcpClient, McpGuardVerifier, policyMandates, registerAgent, storedSoftwareKey, ViaGuard, ViaDeniedError } from '@humanos-ai/agent-sdk';
 
 const client = createViaMcpClient({
   url: 'https://mcptest.humanos.tech/mcp', // Humanos staging
@@ -85,7 +89,7 @@ organization issues for this one agent. The organization's own API key cannot do
 `custodial_needs_agent_key`.
 
 ```ts
-import { createViaMcpClient, humanosHoldsKey, McpGuardVerifier, policyMandates, registerAgent, ViaGuard } from '@humanos/agent-sdk';
+import { createViaMcpClient, humanosHoldsKey, McpGuardVerifier, policyMandates, registerAgent, ViaGuard } from '@humanos-ai/agent-sdk';
 
 const client = createViaMcpClient({
   url: 'https://mcptest.humanos.tech/mcp',
@@ -125,7 +129,7 @@ limits `getAction` describes, or, with no control for the tool, an authorization
 limits' values come from your agent's own context:
 
 ```ts
-import { getAction, requestMandate, waitForMandate, ViaDeniedError } from '@humanos/agent-sdk';
+import { getAction, requestMandate, waitForMandate, ViaDeniedError } from '@humanos-ai/agent-sdk';
 
 try {
   await guard.call('issue_refund', args, issueRefund);
@@ -154,7 +158,7 @@ ten minutes (`until` changes it; `signal` stops it). The call after an approval 
 ## Govern MCP servers you did not write
 
 ```ts
-import { createStdioTransport, startViaMcpProxy, connectUpstream, declareTools } from '@humanos/agent-sdk';
+import { createStdioTransport, startViaMcpProxy, connectUpstream, declareTools } from '@humanos-ai/agent-sdk';
 
 const proxy = await startViaMcpProxy({
   upstreams: [await connectUpstream({ service: 'Slack', url: 'https://mcp.slack.com/mcp', headers: { Authorization: `Bearer ${slackToken}` } })],
@@ -192,8 +196,8 @@ characters.
 ## Test without a platform
 
 ```ts
-import { ViaGuard, softwareKey } from '@humanos/agent-sdk';
-import { createTestVerifier } from '@humanos/agent-sdk/testing';
+import { ViaGuard, softwareKey } from '@humanos-ai/agent-sdk';
+import { createTestVerifier } from '@humanos-ai/agent-sdk/testing';
 
 const agentKey = await softwareKey();
 const t = createTestVerifier({
@@ -210,7 +214,9 @@ connector does: the mandate decides only the tools the policy leaves to one.
 
 ## Develop
 
-Requires Node.js 20 or later.
+Every test tier, what it proves and how to run it: [docs/TESTING.md](docs/TESTING.md).
+
+Requires Node.js 22 or later.
 
 ```
 npm ci
@@ -219,9 +225,26 @@ npm test
 npm run build     # dist/: ES modules + type declarations
 ```
 
-`npm ci` also builds `dist/` (`prepare`). `@humanos/via-sdk-v03` is not on a registry yet;
-development installs it from `vendor/`, and that tarball is the copy projects install by URL.
+The framework tests run each adapter inside its real framework: the framework's own agent loop and Anthropic
+provider against a scripted model server, a fake Humanos connector deciding on a test policy, and real MCP servers
+(stdio and HTTP). Every framework passes the same contract (`test/frameworks/contract.ts`). Their frameworks are
+devDependencies, except the heavy test-only ones (Claude Agent SDK's native engine, and wrangler with Cloudflare
+Agents, which run a Worker in workerd): they install apart, so `npm ci` stays light:
 
-To release: bump `version` in `package.json` and `SDK_VERSION` in `src/mcp/client.ts` (a test
-holds them equal), update the tag in the Install snippet above, add the release's entry to
-[CHANGELOG.md](CHANGELOG.md), then tag the commit `v<version>`.
+```
+(cd test/frameworks && npm ci)
+npm run check-types:frameworks
+npm run test:frameworks
+```
+
+The live tier runs the same drivers on a real model (Claude Haiku) against the dev platform, as one agent of a test
+organization whose policy is set by hand. It needs `HUMANOS_LIVE_API_KEY`, `HUMANOS_LIVE_SIGNATURE_SECRET` and
+`ANTHROPIC_API_KEY` (in the environment or `test/.env`), skips without them, and runs only by hand:
+`npm run test:live`, or the `live` workflow.
+
+`npm ci` also builds `dist/` (`prepare`).
+
+To release: give the CHANGELOG's Unreleased section its version, then publish a GitHub Release from `main` with the tag
+`v<version>`. The `release` workflow runs the whole CI, sets the version from the tag on its runner (the build writes it
+into the client), and publishes to npm with the `NPM_TOKEN` secret. Nothing else publishes: not a push, a merge or a
+tag alone.

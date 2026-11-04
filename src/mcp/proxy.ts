@@ -22,11 +22,12 @@
  */
 import { ViaDeniedError, ViaGuard } from '../guard.js';
 import type { ViaAgentKey } from '../key-provider.js';
-import { AGENT_RECORD_HEADER, AGENT_RECORD_META_KEY, CALL_PROOF_HEADER, CALL_PROOF_META_KEY } from '@humanos/via-sdk-v03';
-import type { MandateRequestHint, VerifyOutcome } from '../types.js';
+import { AGENT_RECORD_HEADER, AGENT_RECORD_META_KEY, CALL_PROOF_HEADER, CALL_PROOF_META_KEY } from '@humanos-ai/via-sdk';
+import type { VerifyOutcome } from '../types.js';
 import type { ViaMcpClient } from './client.js';
 import { declareTools, type DeclaredTool, type ServiceDeclaration } from './declare.js';
 import { McpGuardVerifier, coveringMandate, policyMandates, type AgentPolicy, type GuardMandate } from './guard-verifier.js';
+import { audienceOf, refusalText } from './refusal.js';
 import { defaultPlainReason, type JsonRpcMessage } from './server.js';
 import type { Upstream, UpstreamCallExtra, UpstreamResult, UpstreamTool } from './upstream.js';
 
@@ -232,15 +233,6 @@ export async function startViaMcpProxy(cfg: ViaMcpProxyConfig): Promise<ViaMcpPr
   await mandates.read();
   const guard = new ViaGuard({ agentKey: cfg.agentKey, agentDid: cfg.did, verifier, mandates, mode: cfg.mode ?? 'enforce' });
 
-  const noMandate = (tool: ProxiedTool, request?: MandateRequestHint, held?: boolean): string =>
-    `${held ? 'The mandate this agent holds does not cover' : 'No mandate covers'} ${tool.upstreamName} (${tool.service}). ` +
-    `Nothing was sent to ${tool.service}. ` +
-    (request?.kind === 'guardrail'
-      ? `The organization's policy needs a person's mandate under ${request.actionIds.join(' or ')} for it: ask the person for one (its limits: get_action).`
-      : request?.kind === 'authorization'
-        ? `The organization's policy needs a person's authorization for it, and names no control: ask the person to authorize this one call.`
-        : `The organization's policy leaves it to a person's mandate: the person accepts one on a control made for ${tool.service}.`);
-
   const callTool = async (name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> => {
     const tool = byName.get(name);
     if (!tool) return text(`Unknown tool ${name}.`, true);
@@ -256,15 +248,14 @@ export async function startViaMcpProxy(cfg: ViaMcpProxyConfig): Promise<ViaMcpPr
           if (r.isError) throw new UpstreamToolError(r); // reported as ACTION_FAILED, then surfaced as the server said it
           return r;
         },
-        audienceOf(tool.upstream),
+        audienceOf(tool.upstream.server?.origin),
       );
       const r = out.result;
       if (!r) return text('', false);
       return { content: r.content, ...(r.structuredContent !== undefined ? { structuredContent: r.structuredContent } : {}) };
     } catch (e) {
-      // The policy leaves the tool to a person's mandate, and none this agent holds fits: say which one it needs.
-      if (e instanceof ViaDeniedError && e.reason === 'mandate_required') return text(noMandate(tool, e.request, !!e.mandateId), true);
-      if (e instanceof ViaDeniedError) return text(`Blocked by VIA: ${plainReason(e.reason)}. Nothing was sent to ${tool.service}. Do not retry.`, true);
+      // Refused: the plain reason, or, when the policy leaves the tool to a person's mandate, which one it needs.
+      if (e instanceof ViaDeniedError) return text(refusalText({ name: tool.upstreamName, service: tool.service }, e, plainReason), true);
       if (e instanceof UpstreamToolError) return { content: e.result.content, isError: true };
       return text(`Error: ${e instanceof Error ? e.message : String(e)}`, true);
     }
@@ -344,8 +335,3 @@ export function callProofExtra(outcome: VerifyOutcome): UpstreamCallExtra | unde
   };
 }
 
-/** The party a call to `upstream` goes to: a remote server's `https` origin; none for a local or in-process one. */
-function audienceOf(upstream: Upstream): { audience?: string } {
-  const origin = upstream.server?.origin;
-  return origin?.startsWith('https://') ? { audience: origin } : {};
-}

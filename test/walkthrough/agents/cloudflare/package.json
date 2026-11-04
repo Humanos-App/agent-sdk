@@ -1,0 +1,8 @@
+{
+  "name": "walkthrough-cloudflare",
+  "private": true,
+  "type": "module",
+  "description": "A support agent on Cloudflare Agents (a Worker), with the lines humanos init prints; run-cases.mjs runs it in workerd.",
+  "dependencies": { "@ai-sdk/anthropic": "^4.0.96", "agents": "^0.33.0", "ai": "^7.0.162", "zod": "^4.6.7" },
+  "devDependencies": { "wrangler": "^4.157.0" }
+}
