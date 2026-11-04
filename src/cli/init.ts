@@ -1,5 +1,5 @@
 /**
- * `humanos-agent init` and `restore`.
+ * `humanos init` and `restore`.
  *
  * `init`: the framework (found in `package.json`, confirmed or chosen), the connector's credentials in `.env`, the
  * agent registered, the MCP servers in `.mcp.json` declared, and the interception: for Claude Agent SDK the hook
@@ -38,7 +38,7 @@ const NOT_YET: Record<string, string> = {
 };
 
 /** The `PreToolUse` / `PostToolUse` / `PostToolUseFailure` command `init` writes for Claude Agent SDK. */
-export const CLAUDE_HOOK_COMMAND = 'npx --no-install humanos-agent hook claude';
+export const CLAUDE_HOOK_COMMAND = 'npx --no-install humanos hook claude';
 const CLAUDE_HOOK_EVENTS = ['PreToolUse', 'PostToolUse', 'PostToolUseFailure'] as const;
 
 interface Change {
@@ -90,7 +90,7 @@ export async function initCommand(argv: string[], ctx: CliContext): Promise<{ fr
   change('.gitignore', (current = '') => (/^\.humanos\/?$/m.test(current) ? undefined : `${current}${current && !current.endsWith('\n') ? '\n' : ''}.humanos/\n`));
   if (missing.length) {
     saveManifest(home, manifest);
-    ctx.out(`Fill ${missing.join(' and ')} in .env (the dashboard's API Keys page: https://app.humanos.tech), then run \`humanos-agent init\` again.`);
+    ctx.out(`Fill ${missing.join(' and ')} in .env (the dashboard's API Keys page: https://app.humanos.tech), then run \`humanos init\` again.`);
     return { framework, registered: false };
   }
 
@@ -108,7 +108,7 @@ export async function initCommand(argv: string[], ctx: CliContext): Promise<{ fr
   if (isWorker(ctx.cwd)) for (const line of WORKER_SECRETS) ctx.out(line);
   saveManifest(home, manifest);
   ctx.out('Until this agent’s policy is set, every call is allowed and recorded. Set it in the dashboard: Agents, then Policy.');
-  ctx.out('Undo every file change: `humanos-agent restore`.');
+  ctx.out('Undo every file change: `humanos restore`.');
   return { framework, registered: true };
 }
 
@@ -238,7 +238,7 @@ export async function restoreCommand(argv: string[], ctx: CliContext): Promise<{
   const home = agentDir(ctx.via?.env ?? environment(ctx.cwd), ctx.cwd, ctx.via?.dir);
   const manifest = readManifest(home);
   if (!manifest) {
-    ctx.out('Nothing to restore: `humanos-agent init` has not changed any file here.');
+    ctx.out('Nothing to restore: `humanos init` has not changed any file here.');
     return { restored: [], kept: [] };
   }
   const restored: string[] = [];

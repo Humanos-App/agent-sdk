@@ -1,6 +1,6 @@
 # Setting up Humanos in your agent
 
-Install the SDK, put your API key in `.env`, and run `npx humanos-agent init`. From then on every tool call your
+Install the SDK, put your API key in `.env`, and run `npx humanos init`. From then on every tool call your
 agent makes is checked by Humanos before it runs, and recorded. Until you set the agent's policy every call is allowed;
 once you set it, it is enforced. Claude Agent SDK needs no code; the other frameworks need two lines, which `init`
 prints.
@@ -32,7 +32,11 @@ HUMANOS_API_KEY=<your API Key>
 HUMANOS_SIGNATURE_SECRET=<your Signature Secret>
 ```
 
-## 3. `npx humanos-agent init`
+## 3. `npx humanos init`
+
+Run it in the project where you installed the SDK: `npx humanos` is the `humanos` command the SDK installs. (Before
+installing, `npx -p @humanos-ai/agent-sdk humanos init` works too; a bare `npx humanos` there would fetch the REST
+SDK package named `humanos`, which has no command.)
 
 `init` finds your framework in `package.json` (it asks when it finds more than one), then:
 
@@ -41,8 +45,8 @@ HUMANOS_SIGNATURE_SECRET=<your Signature Secret>
 - **declares the tools** of the MCP servers in `.mcp.json`, when there is one;
 - **sets up the checks**: for Claude Agent SDK it writes the hooks; for the others it prints the lines to add.
 
-`npx humanos-agent restore` undoes every file change `init` made; the key stays. `npx humanos-agent status` shows the
-agent and each tool's access. `npx humanos-agent help` lists every command, with examples.
+`npx humanos restore` undoes every file change `init` made; the key stays. `npx humanos status` shows the
+agent and each tool's access. `npx humanos help` lists every command, with examples.
 
 ## 4. Add the lines for your framework
 

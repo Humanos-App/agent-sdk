@@ -14,8 +14,8 @@ import { fakeConnector, serveConnector, withCallProof, type FakeConnector } from
 
 export const AGENT_DID = 'did:web:humanos.tech:agent:test';
 
-/** The built CLI: what a routed stdio entry runs here, in place of `npx --no-install humanos-agent`. */
-export const BIN = fileURLToPath(new URL('../../dist/bin/humanos-agent.js', import.meta.url));
+/** The built CLI: what a routed stdio entry runs here, in place of `npx --no-install humanos`. */
+export const BIN = fileURLToPath(new URL('../../dist/bin/humanos.js', import.meta.url));
 export const PROXY = { command: process.execPath, args: [BIN, 'proxy'] } as const;
 
 /** Test credentials, for the fake connector only. */

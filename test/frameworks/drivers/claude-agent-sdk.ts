@@ -2,7 +2,7 @@
  * Claude Agent SDK, for real: `query()` runs the Claude Code engine against the scripted model
  * (`ANTHROPIC_BASE_URL`). The agent's tools are an in-process SDK MCP server; MCP servers are `mcpServers` entries.
  * Two ways in: the hooks in code (`claudeAgentSdk().gate()`), and no code at all, the hook commands `init` writes into
- * `.claude/settings.json` (`humanos-agent hook claude`), which also governs the engine's built-in tools.
+ * `.claude/settings.json` (`humanos hook claude`), which also governs the engine's built-in tools.
  */
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -91,7 +91,7 @@ export function writeSettingsHooks(dir: string): void {
 export const noCode: FrameworkDriver = {
   name: 'Claude Agent SDK (no code: settings hooks)',
   skip: {
-    declare: 'an agent with no Humanos code declares nothing itself; `humanos-agent declare` and the platform’s observed tools do',
+    declare: 'an agent with no Humanos code declares nothing itself; `humanos declare` and the platform’s observed tools do',
     'mcp-stdio': 'its stdio server is not routed, so no proxy declares it; the hook still checks each call once',
   },
   async run(ctx) {

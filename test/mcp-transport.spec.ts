@@ -133,7 +133,7 @@ describe('routeStdio — a stdio entry rewritten to run behind the governing pro
     expect(routeStdio({ service: SERVICE, command: 'node', args: ['server.mjs'], env: { TOKEN: 't' } })).toEqual({
       service: SERVICE,
       command: 'npx',
-      args: ['--no-install', 'humanos-agent', 'proxy', '--service', SERVICE, '--', 'node', 'server.mjs'],
+      args: ['--no-install', 'humanos', 'proxy', '--service', SERVICE, '--', 'node', 'server.mjs'],
       env: { TOKEN: 't' },
     });
   });

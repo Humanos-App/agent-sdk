@@ -1,5 +1,5 @@
 /**
- * `humanos-agent proxy --service <name> -- <command> <args…>` — the governing proxy in front of one stdio MCP
+ * `humanos proxy --service <name> -- <command> <args…>` — the governing proxy in front of one stdio MCP
  * server, as an entry `routeStdio` rewrote runs it. The host starts this in place of the server; the proxy starts the
  * server, declares its tools, and checks every call. The agent is the project's own (`via()`: its `.env` and key), so
  * the calls are the same agent's whether they go through a framework hook or this proxy.
@@ -21,7 +21,7 @@ export function parseProxyArgs(argv: string[]): ProxyArgs {
   const at = own.indexOf('--service');
   const service = at === -1 ? undefined : own[at + 1];
   const [command, ...args] = dash === -1 ? [] : argv.slice(dash + 1);
-  if (!service || !command) throw new Error('usage: humanos-agent proxy --service <name> -- <command> [args…]');
+  if (!service || !command) throw new Error('usage: humanos proxy --service <name> -- <command> [args…]');
   return { service, command, args };
 }
 

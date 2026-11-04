@@ -11,7 +11,7 @@ import { fakeConnector } from './harness/connector.js';
 const AGENT = 'did:web:humanos.tech:agent:a';
 const SERVER = fileURLToPath(new URL('./harness/support-server.mjs', import.meta.url));
 
-describe('humanos-agent proxy — the governing proxy in front of a real stdio MCP server', () => {
+describe('humanos proxy — the governing proxy in front of a real stdio MCP server', () => {
   it('starts the server, declares its tools, allows what the policy allows and refuses the rest', async () => {
     const agentKey = await softwareKey();
     const t = createTestVerifier({ rules: [], userParams: {}, agentKey, policy: { tools: { lookup_order: 'allow', issue_refund: 'deny' } } });
@@ -46,7 +46,7 @@ describe('humanos-agent proxy — the governing proxy in front of a real stdio M
       command: 'node',
       args: ['server.mjs', '--port', '1'],
     });
-    expect(() => parseProxyArgs(['--', 'node'])).toThrow(/usage: humanos-agent proxy --service <name> -- <command>/);
+    expect(() => parseProxyArgs(['--', 'node'])).toThrow(/usage: humanos proxy --service <name> -- <command>/);
     expect(() => parseProxyArgs(['--service', 'Support desk'])).toThrow(/usage/);
   });
 });

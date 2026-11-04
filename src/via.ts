@@ -1,5 +1,5 @@
 /**
- * VIA() — an agent's Humanos, set up from its environment: what `humanos-agent init` leaves behind, read back.
+ * VIA() — an agent's Humanos, set up from its environment: what `humanos init` leaves behind, read back.
  *
  * One call gives a framework adapter everything it needs: the connector (`HUMANOS_API_KEY`,
  * `HUMANOS_SIGNATURE_SECRET`), the agent's key (`HUMANOS_AGENT_KEY`, else `.humanos/agent-key.json`), its DID
@@ -130,6 +130,6 @@ function isKept(key: ViaAgentKey): key is StoredKey {
 /** A variable `via` cannot start without; the message names it and never shows a value. */
 function required(env: Record<string, string | undefined>, name: string): string {
   const value = env[name];
-  if (!value) throw new Error(`via: ${name} is not set (in the environment or .env); \`humanos-agent init\` adds it`);
+  if (!value) throw new Error(`via: ${name} is not set (in the environment or .env); \`humanos init\` adds it`);
   return value;
 }

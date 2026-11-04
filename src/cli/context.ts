@@ -1,4 +1,4 @@
-/** What every `humanos-agent` command runs in: the project, its environment, where it writes, and how it asks. */
+/** What every `humanos` command runs in: the project, its environment, where it writes, and how it asks. */
 import { createInterface } from 'node:readline/promises';
 import type { ViaOptions } from '../via.js';
 

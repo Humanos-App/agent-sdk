@@ -46,7 +46,7 @@ export interface RunContext {
     /** A Streamable HTTP server, and the `https` origin its calls' proof is for. */
     http?: { service: string; url: string; origin: string };
   };
-  /** How a routed stdio entry runs the proxy here: the built CLI, as `npx --no-install humanos-agent proxy` would. */
+  /** How a routed stdio entry runs the proxy here: the built CLI, as `npx --no-install humanos proxy` would. */
   proxy: { command: string; args: readonly string[] };
   /** Variables a process the run starts needs (the proxy): the connector, its credentials, the key's directory. */
   env: Record<string, string>;

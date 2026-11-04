@@ -2,6 +2,6 @@
   "name": "walkthrough-ai-sdk",
   "private": true,
   "type": "module",
-  "description": "A support agent on Vercel AI SDK, with the lines humanos-agent init prints.",
+  "description": "A support agent on Vercel AI SDK, with the lines humanos init prints.",
   "dependencies": { "@ai-sdk/anthropic": "^4.0.96", "ai": "^7.0.162", "zod": "^4.6.7" }
 }

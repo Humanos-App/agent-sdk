@@ -1,5 +1,5 @@
 // A support agent on Cloudflare Agents (an Agent, a Durable Object), its model and tools on AI SDK, with the lines
-// `humanos-agent init` printed added (marked "Humanos"). GET /?case=<lookup|refund|discount5|discount15>.
+// `humanos init` printed added (marked "Humanos"). GET /?case=<lookup|refund|discount5|discount15>.
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { Agent, getAgentByName } from 'agents';
 import { generateText, stepCountIs, tool } from 'ai';

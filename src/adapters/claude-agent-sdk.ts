@@ -5,7 +5,7 @@
  * on to the agent's own permissions, which still decide it.
  *
  * Two ways in, the same checks: `gate()` gives the hooks for `query({ options: { hooks } })`; with no code at all,
- * `humanos-agent init` writes the same hooks as commands into `.claude/settings.json` (`humanos-agent hook claude`),
+ * `humanos init` writes the same hooks as commands into `.claude/settings.json` (`humanos hook claude`),
  * which the SDK loads by default. A call Humanos cannot check is refused (the hook fails closed).
  *
  * Declaring: `sdkServer` declares an in-process server's tools with their schemas; the proxy a stdio server routed by

@@ -2,6 +2,6 @@
   "name": "walkthrough-langchain",
   "private": true,
   "type": "module",
-  "description": "A support agent on LangChain createAgent, with the lines humanos-agent init prints.",
+  "description": "A support agent on LangChain createAgent, with the lines humanos init prints.",
   "dependencies": { "@langchain/anthropic": "^1.6.0", "@langchain/core": "^1.3.4", "langchain": "^1.6.1", "zod": "^4.6.7" }
 }

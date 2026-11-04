@@ -1,4 +1,4 @@
-// A support agent on OpenRouter, through Vercel AI SDK, with the lines `humanos-agent init` printed added (marked "Humanos").
+// A support agent on OpenRouter, through Vercel AI SDK, with the lines `humanos init` printed added (marked "Humanos").
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import { generateText, stepCountIs, tool } from 'ai';
 import { z } from 'zod';

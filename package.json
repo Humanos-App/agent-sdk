@@ -42,7 +42,7 @@
     }
   },
   "bin": {
-    "humanos-agent": "./dist/bin/humanos-agent.js"
+    "humanos": "./dist/bin/humanos.js"
   },
   "files": [
     "dist"

@@ -1,6 +1,6 @@
 /**
  * CLAUDE AGENT SDK HOOKS — what decides each Claude tool call, shared by `claudeAgentSdk().gate()` (hooks in code) and
- * `humanos-agent hook claude` (hooks as commands in `.claude/settings.json`). Kept apart from the adapter so the CLI
+ * `humanos hook claude` (hooks as commands in `.claude/settings.json`). Kept apart from the adapter so the CLI
  * loads nothing a project may not have installed (the adapter's `sdkServer` needs zod; these hooks do not).
  *
  * `PreToolUse` checks the call: refused, it answers deny with the reason; allowed, it says nothing, so the agent's own
@@ -49,7 +49,7 @@ export const denyCall = (reason: string): ClaudeHookOutput => ({
   hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason },
 });
 
-/** The hooks over a store: what `gate` and `humanos-agent hook claude` both run. `serviceOf` names a server's service. */
+/** The hooks over a store: what `gate` and `humanos hook claude` both run. `serviceOf` names a server's service. */
 export function claudeHooks(v: Via, pending: PendingCalls, serviceOf: (server: string) => string = (s) => s) {
   const named = (input: ClaudeHookInput): { service: string; tool: string } => {
     const name = input.tool_name ?? '';
