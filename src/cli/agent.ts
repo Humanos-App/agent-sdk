@@ -22,7 +22,8 @@ export async function registerCommand(_argv: string[], ctx: CliContext): Promise
   const env = ctx.via?.env ?? environment(ctx.cwd);
   ctx.out(`Agent ${!v.registration && r.existing ? 'already registered' : 'registered'}: ${r.did}`);
   ctx.out(`  key: ${env.HUMANOS_AGENT_KEY ? 'HUMANOS_AGENT_KEY' : join(agentDir(env, ctx.cwd, ctx.via?.dir), 'agent-key.json')} (keep it: a new key is a new agent)`);
-  ctx.out(`  graded: ${r.granted.assurance} / ${r.granted.binding}${r.degradedFrom ? ` (claimed ${r.degradedFrom})` : ''}`);
+  // The grade only when it is not what the key claimed: a software key the agent holds is the usual case, and says nothing new.
+  if (r.degradedFrom) ctx.out(`  Humanos could not confirm the key's claimed ${r.degradedFrom} assurance, and registered it as ${r.granted.assurance} (${r.granted.binding}).`);
   return v;
 }
 

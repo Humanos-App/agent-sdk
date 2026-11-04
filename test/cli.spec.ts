@@ -39,12 +39,14 @@ describe('humanos init and restore — a Claude Agent SDK project, its own setti
     expect(written.hooks.Stop).toHaveLength(1);
     expect(read(scene.dir, '.gitignore')).toBe('node_modules/\n.humanos/\n');
     expect(said.join('\n')).toContain(AGENT_DID);
+    expect(said.join('\n')).toContain('Claude Code reads the same file: a `claude` session in this folder is checked too, as this agent.');
     expect(scene.humanos.declared.some((d) => d.services.includes('Orders') && d.tools.length === 2)).toBe(true);
     expect(said.join('\n')).not.toContain('test-signature-secret');
 
     // Again: nothing added twice.
     await initCommand(['--yes'], ctx);
     expect(JSON.parse(read(scene.dir, '.claude/settings.json')).hooks.PreToolUse).toHaveLength(1);
+    expect(said).toContain('Framework: Claude Agent SDK, as answered before (`--framework` changes it).');
 
     const { restored } = await restoreCommand([], ctx);
     expect(restored.sort()).toEqual(['.claude/settings.json', '.gitignore']);
@@ -73,24 +75,43 @@ describe('humanos init and restore — a Claude Agent SDK project, its own setti
 });
 
 describe('humanos init — the other paths', () => {
-  it('an AI SDK project: prints the lines to add, and writes no settings', async () => {
+  it('an AI SDK project: prints the lines to add and the one change to the call, under the package’s name as the service; writes no settings', async () => {
     const scene = await agentScene({});
-    write(scene.dir, 'package.json', JSON.stringify({ dependencies: { ai: '7.0.0' } }));
+    write(scene.dir, 'package.json', JSON.stringify({ name: '@acme/support-desk', dependencies: { ai: '7.0.0' } }));
     const { ctx, said } = context(scene.dir);
     expect((await initCommand(['--yes'], ctx)).framework).toBe('ai-sdk');
-    expect(said.join('\n')).toContain("humanos.guard(tools, 'Your service')");
+    expect(said).toEqual(
+      expect.arrayContaining([
+        'Add to the agent’s code:',
+        "  const humanos = await aiSdk();",
+        'Then, in your generateText or streamText call (or your ToolLoopAgent), pass your tools through Humanos:',
+        "  tools: humanos.guard(tools, 'support-desk'),",
+        expect.stringMatching(/^'support-desk' is the service: the dashboard lists these tools under it/),
+      ]),
+    );
+    expect(said.join('\n')).not.toMatch(/graded|Your service/);
     expect(existsSync(join(scene.dir, '.claude'))).toBe(false);
+    await scene.close();
+  });
+
+  it('a LangChain project: the middleware for createAgent, and the guard for a ToolNode', async () => {
+    const scene = await agentScene({});
+    write(scene.dir, 'package.json', JSON.stringify({ name: 'claims-agent', dependencies: { langchain: '1.6.1' } }));
+    const { ctx, said } = context(scene.dir);
+    expect((await initCommand(['--yes'], ctx)).framework).toBe('langchain');
+    expect(said).toContain("  middleware: [humanos.gate({ service: 'claims-agent' })],");
+    expect(said.join('\n')).toContain("new ToolNode(humanos.guard(tools, 'claims-agent'))");
     await scene.close();
   });
 
   it('a Cloudflare Worker: the AI SDK lines, and the agent’s key and credentials as the Worker’s secrets', async () => {
     const scene = await agentScene({});
-    write(scene.dir, 'package.json', JSON.stringify({ dependencies: { agents: '0.33.0', ai: '7.0.0' } }));
+    write(scene.dir, 'package.json', JSON.stringify({ name: 'support-worker', dependencies: { agents: '0.33.0', ai: '7.0.0' } }));
     write(scene.dir, 'wrangler.jsonc', '{}');
     const { ctx, said } = context(scene.dir);
     expect((await initCommand(['--yes'], ctx)).framework).toBe('ai-sdk');
     const all = said.join('\n');
-    expect(all).toContain("humanos.guard(tools, 'Your service')");
+    expect(all).toContain("  tools: humanos.guard(tools, 'support-worker'),");
     expect(all).toContain('HUMANOS_AGENT_KEY (the content of .humanos/agent-key.json');
     expect(all).toContain('npx wrangler secret put');
     await scene.close();
@@ -102,7 +123,41 @@ describe('humanos init — the other paths', () => {
     expect(await initCommand(['--framework', 'custom'], ctx)).toEqual({ framework: 'custom', registered: false });
     expect(read(dir, '.env')).toBe('HUMANOS_API_KEY=\nHUMANOS_SIGNATURE_SECRET=\n');
     expect(read(dir, '.gitignore')).toBe('.humanos/\n');
-    expect(said.join('\n')).toMatch(/Fill HUMANOS_API_KEY and HUMANOS_SIGNATURE_SECRET in \.env/);
+    expect(said.join('\n')).toMatch(/Fill HUMANOS_API_KEY and HUMANOS_SIGNATURE_SECRET in \.env .*then run `npx humanos init` again/);
+  });
+
+  it('the framework answer is kept: not asked again on the next run, changed by --framework, asked again after restore', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agent-project-'));
+    write(dir, 'package.json', JSON.stringify({ dependencies: { ai: '7', langchain: '1' } }));
+    const asked: string[] = [];
+    const { ctx, said } = context(dir, { via: { env: {} }, ask: async (q) => (asked.push(q), '2') });
+    expect((await initCommand([], ctx)).framework).toBe('langchain'); // stops for .env, keeping the answer
+    expect(asked).toHaveLength(1);
+
+    expect((await initCommand([], ctx)).framework).toBe('langchain');
+    expect(asked).toHaveLength(1);
+    expect(said).toContain('Framework: LangChain, as answered before (`--framework` changes it).');
+
+    expect((await initCommand(['--framework', 'ai-sdk'], ctx)).framework).toBe('ai-sdk');
+    expect((await initCommand([], ctx)).framework).toBe('ai-sdk');
+    expect(asked).toHaveLength(1);
+
+    await restoreCommand([], ctx);
+    expect((await initCommand([], ctx)).framework).toBe('langchain');
+    expect(asked).toHaveLength(2);
+  });
+
+  it('names a framework built on AI SDK by its own name: Cloudflare Agents, OpenRouter', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agent-project-'));
+    write(dir, 'package.json', JSON.stringify({ dependencies: { ai: '7', '@openrouter/ai-sdk-provider': '3' } }));
+    expect(detectFrameworks(dir).supported).toEqual([{ framework: 'ai-sdk', name: 'OpenRouter (AI SDK)' }]);
+    const asked: string[] = [];
+    const { ctx } = context(dir, { via: { env: {} }, ask: async (q) => (asked.push(q), 'y') });
+    await initCommand([], ctx);
+    expect(asked).toEqual(['This agent is built on OpenRouter (AI SDK)? [Y/n]']);
+
+    write(dir, 'package.json', JSON.stringify({ dependencies: { ai: '7', agents: '0.33' } }));
+    expect(detectFrameworks(dir).supported).toEqual([{ framework: 'ai-sdk', name: 'Cloudflare Agents (AI SDK)' }]);
   });
 
   it('asks which framework when more than one is found, and says which are not supported yet', async () => {
@@ -177,6 +232,7 @@ describe('humanos declare and status', () => {
     await registerCommand([], first.ctx);
     expect(first.said[0]).toBe(`Agent registered: ${AGENT_DID}`);
     expect(first.said.join('\n')).toContain(join(fresh, 'agent-key.json'));
+    expect(first.said.join('\n')).not.toContain('graded'); // a software key the agent holds: nothing to say about its grade
     await scene.close();
   });
 

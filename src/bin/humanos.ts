@@ -24,9 +24,9 @@ Commands:
   init       Set Humanos up in this project: finds your framework, checks .env for your API key, registers
              the agent, declares the MCP servers in .mcp.json, and installs the checks (Claude Agent SDK:
              hooks in .claude/settings.json; other frameworks: the lines to add, printed).
-               --framework ai-sdk|claude-agent-sdk|langchain|custom   skip the question
+               --framework ai-sdk|claude-agent-sdk|langchain|custom   skip the question, or change the answer init kept
                --yes                                                  do not ask when there is one answer
-  register   Register the agent's key (created on the first run) and show its DID and grade.
+  register   Register the agent's key (created on the first run) and show its DID.
   declare    Declare tools to Humanos.
                --mcp <file>                       the servers in an MCP config file (default .mcp.json)
                --entry <module> --framework ai-sdk|langchain --service <name> [--export <name>]

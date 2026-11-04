@@ -3,7 +3,7 @@
 Four tiers, from fast to real. **Unit** tests the SDK on its own. **Contract** runs every framework adapter inside its
 real framework, against a scripted model and a fake Humanos. **Live** runs the same agents on a real model against a
 real Humanos platform. **Walkthroughs** set up an agent from scratch, the way a developer does. Results on
-2026-11-04: 224 unit, 89 contract (2 skipped), 24 live, 5 walkthroughs, all passing.
+2026-11-04: 227 unit, 89 contract (2 skipped), 24 live, 5 walkthroughs, all passing.
 
 | Tier | Command | Needs | Proves |
 | --- | --- | --- | --- |

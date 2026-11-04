@@ -38,12 +38,14 @@ Run it in the project where you installed the SDK: `npx humanos` is the `humanos
 installing, `npx -p @humanos-ai/agent-sdk humanos init` works too; a bare `npx humanos` there would fetch the REST
 SDK package named `humanos`, which has no command.)
 
-`init` finds your framework in `package.json` (it asks when it finds more than one), then:
+`init` finds your framework in `package.json` and asks you to confirm it, once: later runs keep the answer
+(`--framework` changes it). Then it:
 
 - **registers your agent**: it creates the agent's key in `.humanos/agent-key.json` and registers it. The key is the
   agent: keep it, back it up, and never commit it (`init` adds `.humanos/` to `.gitignore`). A new key is a new agent.
 - **declares the tools** of the MCP servers in `.mcp.json`, when there is one;
-- **sets up the checks**: for Claude Agent SDK it writes the hooks; for the others it prints the lines to add.
+- **sets up the checks**: for Claude Agent SDK it writes the hooks; for the others it prints the two lines to add and
+  the one change to the call that hands the model its tools, with your package's name as the service.
 
 `npx humanos restore` undoes every file change `init` made; the key stays. `npx humanos status` shows the
 agent and each tool's access. `npx humanos help` lists every command, with examples.
