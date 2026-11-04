@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- `@humanos-ai/via-sdk` is a dependency, pinned to `0.8.1` (was the peer `^0.8.1`): `npm install @humanos-ai/agent-sdk`
+  installs it, and an agent runs the protocol code this release was tested on. An agent that installs via-sdk itself
+  at another version gets its own copy beside this one, which is harmless: the SDK passes only plain data across.
+
 ## 0.4.3
 
 `registerAgent(client, humanosHoldsKey)` and a guard with no key need a Humanos platform where an agent key registers

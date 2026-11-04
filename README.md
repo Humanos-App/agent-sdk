@@ -5,7 +5,7 @@ bounded permission a person grants. The agent holds its own key; every tool call
 Humanos *before* the tool runs, and every decision and outcome is written to a signed, hash-chained record.
 
 The VIA protocol itself — credentials, events, verification — is
-[`@humanos-ai/via-sdk`](https://github.com/Humanos-App), a peer dependency. This package is the
+[`@humanos-ai/via-sdk`](https://github.com/Humanos-App/via-sdk), installed with it. This package is the
 agent's side of the wire.
 
 For complete, runnable agents built on it, see
@@ -37,10 +37,10 @@ For complete, runnable agents built on it, see
 ## Install
 
 ```
-npm install @humanos-ai/agent-sdk @humanos-ai/via-sdk
+npm install @humanos-ai/agent-sdk
 ```
 
-`@humanos-ai/via-sdk` is the VIA protocol, a peer, so an agent that also verifies things itself shares one copy.
+`@humanos-ai/via-sdk`, the VIA protocol, comes with it, pinned to the version this release was tested on.
 Requires Node.js 22 or later. The framework adapters load their framework from the agent's own dependencies:
 `ai` for `./ai-sdk`, `langchain` and `@langchain/core` for `./langchain`, `zod` for `./claude-agent-sdk`.
 
