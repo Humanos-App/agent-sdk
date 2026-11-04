@@ -1,9 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.4.3
 
-Needs a Humanos platform where an agent key registers an agent with no key and verifies its calls without a proof
-(v0.3 §16.14). Released once the platform serving it is deployed.
+`registerAgent(client, humanosHoldsKey)` and a guard with no key need a Humanos platform where an agent key registers
+an agent with no key and verifies its calls without a proof (v0.3 §16.14), which production does not serve yet.
+Everything else in this release works on production today.
 
 - `registerAgent(client, humanosHoldsKey)`: Humanos mints the agent's key and holds it, for an agent with no secure
   place to keep one. Only under an agent key issued for this agent; the organization's API key is refused
@@ -27,6 +28,12 @@ Needs a Humanos platform where an agent key registers an agent with no key and v
 - `humanos init --yes` with more than one framework refuses to pick, naming `--framework`; a wrong answer to the
   question is asked again. `restore` follows only records of files in the project. The CLI no longer loads zod: the
   Claude hooks are `claude-hooks.ts`, apart from the adapter.
+- `humanos init` keeps the framework answer in `.humanos/init.json`: a run that stopped for `.env`, and every run
+  after, does not ask again (`--framework` changes it; `restore` forgets it). It names OpenRouter and Cloudflare
+  Agents projects by their own names, not "Vercel AI SDK". The lines it prints say which one changes the agent's
+  existing call (`tools: humanos.guard(tools, '<service>')`, LangChain's `middleware`), name the package as the
+  service, and say what a service is. For Claude Agent SDK it says a Claude Code session in the folder is checked
+  too. `register` drops the `graded:` line, and says so only when Humanos registered the key below what it claimed.
 - Published to npm as `@humanos-ai/agent-sdk`, with the VIA protocol as the peer `@humanos-ai/via-sdk` (was
   `@humanos/agent-sdk` and `@humanos/via-sdk-v03`, installed from GitHub): `npm install @humanos-ai/agent-sdk
   @humanos-ai/via-sdk`. A GitHub Release published by hand is the only thing that publishes (the `release` workflow,
