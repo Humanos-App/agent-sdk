@@ -17,10 +17,10 @@ prints.
 ## 1. Install
 
 ```bash
-npm install @humanos-ai/agent-sdk @humanos-ai/via-sdk
+npm install @humanos-ai/agent-sdk
 ```
 
-Node.js 22 or later. `@humanos-ai/via-sdk` is the VIA protocol, a peer of the SDK.
+Node.js 22 or later. `@humanos-ai/via-sdk`, the VIA protocol, comes with the SDK.
 
 ## 2. Your API key
 

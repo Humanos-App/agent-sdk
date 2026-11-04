@@ -1,5 +1,5 @@
 // Makes a walkthrough project: a fresh copy of one framework's agent (test/walkthrough/agents/<framework>), with this
-// repo's agent-sdk installed as a developer installs it (`npm pack`, so exactly what npm would publish) and
+// repo's agent-sdk installed as a developer installs it (`npm pack`, so exactly what npm would publish), with its
 // `@humanos-ai/via-sdk` from npm. Then run its steps with `npm run walkthrough -- <dir> …` (docs/TESTING.md).
 //
 //   npm run walkthrough:setup -- <framework> [dir]      framework: claude-agent-sdk | ai-sdk | langchain | openrouter | cloudflare
@@ -30,7 +30,7 @@ writeFileSync(join(dir, '.gitignore'), framework === 'cloudflare' ? 'node_module
 // What npm would publish: the build of this checkout, packed.
 const tarball = run('npm', ['pack', '--pack-destination', dir, '--silent'], here('../..')).trim().split('\n').at(-1);
 // With the template's own framework dependencies, which `npm install` takes from its package.json.
-run('npm', ['install', '--silent', `./${tarball}`, '@humanos-ai/via-sdk'], dir);
+run('npm', ['install', '--silent', `./${tarball}`], dir);
 
 process.stdout.write(`walkthrough: ${framework} agent ready in ${dir}
 Next (from the agent-sdk checkout):

@@ -111,7 +111,7 @@ prints. The agents are templates in `test/walkthrough/agents/<framework>/`; each
 (`test/walkthrough/cases.mjs`): `lookup`, `refund`, `discount5`, `discount15`.
 
 1. `npm run walkthrough:setup -- <framework> [dir]` copies the template into a new project, packs this checkout
-   (exactly what npm would publish) and installs it with `@humanos-ai/via-sdk` from npm. It prints the next steps.
+   (exactly what npm would publish) and installs it, `@humanos-ai/via-sdk` coming from npm with it. It prints the next steps.
 2. `npm run walkthrough -- <dir> npx --no-install humanos init` registers the agent and prints its lines (Claude:
    writes its hooks). The runner hands the command the test credentials from `test/.env` under the product's names,
    never showing them.
