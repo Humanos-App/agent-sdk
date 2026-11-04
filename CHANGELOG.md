@@ -19,6 +19,14 @@ Needs a Humanos platform where an agent key registers an agent with no key and v
   agent key, and one with a proof is `pop_invalid`. With `agentKey`, a call with no proof throws, as the connector
   refuses it.
 
+- `humanos-agent help` (also `--help`, `-h`, `<command> --help`) lists every command with examples; `--version`.
+- The adapters share one check (failing closed, one set of words for a refusal), one run that reports the outcome
+  once, and one routing of stdio MCP entries (`src/adapters/shared.ts`). With it: LangChain's `gate` no longer
+  reports a call twice when reporting its outcome fails, and LangChain's `guard` reports a tool that answers with an
+  error `ToolMessage` as failed.
+- `humanos-agent init --yes` with more than one framework refuses to pick, naming `--framework`; a wrong answer to the
+  question is asked again. `restore` follows only records of files in the project. The CLI no longer loads zod: the
+  Claude hooks are `claude-hooks.ts`, apart from the adapter.
 - Published to npm as `@humanos-ai/agent-sdk`, with the VIA protocol as the peer `@humanos-ai/via-sdk` (was
   `@humanos/agent-sdk` and `@humanos/via-sdk-v03`, installed from GitHub): `npm install @humanos-ai/agent-sdk
   @humanos-ai/via-sdk`. A GitHub Release published by hand is the only thing that publishes (the `release` workflow,

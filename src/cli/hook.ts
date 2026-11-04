@@ -9,7 +9,7 @@
  */
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { claudeHooks, type ClaudeHookInput, type ClaudeHookOutput, type PendingCalls } from '../adapters/claude-agent-sdk.js';
+import { claudeHooks, denyCall, type ClaudeHookInput, type PendingCalls } from '../adapters/claude-hooks.js';
 import { unreachable } from '../adapters/shared.js';
 import { agentDir, environment, via, type ViaOptions } from '../via.js';
 
@@ -33,15 +33,13 @@ function pendingFiles(dir: string): PendingCalls {
   };
 }
 
-const deny = (reason: string): ClaudeHookOutput => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } });
-
 /** One hook run: the input as the SDK sent it, the output to print (empty: nothing to say). */
 export async function claudeHookCommand(stdin: string, options: ViaOptions = {}): Promise<string> {
   let input: ClaudeHookInput;
   try {
     input = JSON.parse(stdin) as ClaudeHookInput;
   } catch {
-    return JSON.stringify(deny('Blocked: the Humanos hook got no readable input. Nothing was run.'));
+    return JSON.stringify(denyCall('Blocked: the Humanos hook got no readable input. Nothing was run.'));
   }
   const pre = input.hook_event_name === 'PreToolUse';
   try {
@@ -51,7 +49,7 @@ export async function claudeHookCommand(stdin: string, options: ViaOptions = {})
     const out = pre ? await hooks.preToolUse(input) : await hooks.postToolUse(input);
     return out.hookSpecificOutput ? JSON.stringify(out) : '';
   } catch (e) {
-    if (pre) return JSON.stringify(deny(unreachable(e)));
+    if (pre) return JSON.stringify(denyCall(unreachable(e)));
     process.stderr.write(`humanos-agent hook: the outcome was not reported: ${e instanceof Error ? e.message : String(e)}\n`);
     return '';
   }

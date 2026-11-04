@@ -11,11 +11,9 @@
  * returns a stream, whose outcome is reported when it is returned, not when the stream ends.
  */
 import { asSchema, type ToolSet } from 'ai';
-import { ViaDeniedError, type GuardCheck } from '../guard.js';
 import type { DeclaredTool } from '../mcp/declare.js';
-import { runChecked } from '../mcp/transport.js';
 import type { Via, ViaOptions } from '../via.js';
-import { blocked, unreachable, viaFrom } from './shared.js';
+import { checkCall, refusalError, runAndSettle, viaFrom } from './shared.js';
 
 export interface AiSdkHumanos {
   via: Via;
@@ -56,28 +54,11 @@ export async function aiSdk(from?: Via | ViaOptions): Promise<AiSdkHumanos> {
       }
       guarded[name] = {
         ...t,
-        // AI SDK hands the model a thrown error's message: the same words a refusal gets in every other adapter.
+        // AI SDK hands the model a thrown error's message: a refusal throws, in the words every adapter uses.
         execute: async (input: unknown, options: unknown) => {
-          let checked: GuardCheck;
-          try {
-            checked = await v.guard.check(name, (input ?? {}) as Record<string, unknown>);
-          } catch (e) {
-            throw new Error(unreachable(e)); // fail closed
-          }
-          if (!checked.proceed) {
-            const denied = new ViaDeniedError(checked.reason, checked.evaluations, checked.under, checked.mandateId, checked.request);
-            denied.message = blocked(checked.reason);
-            throw denied;
-          }
-          let out: unknown;
-          try {
-            out = await runChecked(() => execute(input, options));
-          } catch (e) {
-            await v.guard.settle(checked, { error: e });
-            throw e;
-          }
-          await v.guard.settle(checked);
-          return out;
+          const call = await checkCall(v, name, (input ?? {}) as Record<string, unknown>);
+          if (!call.ok) throw refusalError(call);
+          return runAndSettle(v, call.checked, () => execute(input, options));
         },
       };
     }

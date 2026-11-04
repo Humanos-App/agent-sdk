@@ -42,7 +42,7 @@ HUMANOS_SIGNATURE_SECRET=<your Signature Secret>
 - **sets up the checks**: for Claude Agent SDK it writes the hooks; for the others it prints the lines to add.
 
 `npx humanos-agent restore` undoes every file change `init` made; the key stays. `npx humanos-agent status` shows the
-agent and each tool's access.
+agent and each tool's access. `npx humanos-agent help` lists every command, with examples.
 
 ## 4. Add the lines for your framework
 

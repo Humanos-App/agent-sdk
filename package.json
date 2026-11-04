@@ -63,6 +63,7 @@
     "test:frameworks": "vitest run --config vitest.frameworks.config.ts",
     "test:live": "vitest run --config vitest.live.config.ts",
     "walkthrough": "node test/walkthrough/run.mjs",
+    "walkthrough:setup": "node test/walkthrough/setup.mjs",
     "test:watch": "vitest"
   },
   "peerDependencies": {
