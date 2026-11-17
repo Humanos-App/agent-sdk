@@ -21,6 +21,7 @@ import { createViaMcpClient, type ViaMcpClient } from '../../src/mcp/client.js';
 import { getPolicy } from '../../src/mcp/guard-verifier.js';
 import { via, type Via } from '../../src/via.js';
 import type { LocalTool } from '../frameworks/contract.js';
+import type { CallContext } from '../../src/context.js';
 
 export const LIVE_SERVICE = 'Support desk (live test)';
 /** The access the test organization's policy must give each tool, as `get_policy` names it. */
@@ -87,6 +88,16 @@ export interface LiveAgent {
   verdicts(): { tool: string; decision: string; reason?: string }[];
   /** The outcomes the platform recorded (`report_outcome` answered `recorded`). */
   recorded(): ConnectorCall[];
+  /** What each decided call sent beside it (#654): its context, and the run time its outcome reported. */
+  sent(): SentContext[];
+}
+
+/** One decision's context as the agent sent it: what Humanos must have kept on its `CallContext` row. */
+export interface SentContext {
+  decisionEventUrn: string;
+  tool: string;
+  context: CallContext;
+  durationMs?: number;
 }
 
 /** The test organization's agent on dev: one key across runs, so the dashboard shows one agent. */
@@ -121,6 +132,16 @@ export async function liveAgent(cfg: LiveConfig): Promise<LiveAgent> {
         .filter((c) => c.tool === 'verify' && c.answer)
         .map((c) => ({ tool: String(c.args.tool), decision: String(c.answer!.decision), ...(c.answer!.reason ? { reason: String(c.answer!.reason) } : {}) })),
     recorded: () => calls.filter((c) => c.tool === 'report_outcome' && !c.isError && c.answer && 'recorded' in c.answer),
+    sent: () => {
+      const reported = new Map(calls.filter((c) => c.tool === 'report_outcome').map((c) => [String(c.args.decisionEventId), c.args.durationMs]));
+      return calls
+        .filter((c) => c.tool === 'verify' && typeof c.answer?.decisionEventId === 'string' && c.args.context)
+        .map((c) => {
+          const decisionEventUrn = String(c.answer!.decisionEventId);
+          const durationMs = reported.get(decisionEventUrn);
+          return { decisionEventUrn, tool: String(c.args.tool), context: c.args.context as CallContext, ...(typeof durationMs === 'number' ? { durationMs } : {}) };
+        });
+    },
   };
 }
 
