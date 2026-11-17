@@ -8,8 +8,9 @@
  * `PostToolUseFailure` settle it. Between the two, the decision waits in a `PendingCalls` store: in memory in code, in a
  * file for the command, since each command runs in its own process.
  *
- * Each call reports its context (#654): the model the session started on (`SessionStart`, kept in the same store), and
- * from the session's transcript the model that answered, its message's id and tokens; the run time from `PostToolUse`.
+ * Each call reports its context (#654): from the session's transcript the model that answered, its message's id and
+ * tokens; the model the session started on when `SessionStart` names it (kept in the same store; Agent SDK runs do not,
+ * and hooks in code never get `SessionStart`); the run time from `PostToolUse`.
  *
  * Names: an MCP tool arrives as `mcp__<server>__<tool>` and is checked as `<tool>` under the server's service; a
  * built-in tool (`Bash`, `Write`, `Edit`, …) by its name, under `Claude Agent SDK`.

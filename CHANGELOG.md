@@ -7,8 +7,9 @@
   tool's run time (`durationMs`). Humanos keeps it beside the decision and never decides on it.
   - AI SDK, OpenRouter, Cloudflare Agents: wrap the model, `humanos.model(model)`. A model left unwrapped reports
     `not_accessed`.
-  - Claude Agent SDK: read from the session's transcript; `init` now also writes a `SessionStart` hook, which keeps the
-    session's model. Run `npx humanos init` again to add it.
+  - Claude Agent SDK: the answering model and its tokens, read from the session's transcript. The requested model only
+    where Claude's `SessionStart` hook carries it, which `init` now also writes (run `npx humanos init` again to add
+    it); Agent SDK runs (0.3.317) do not send it, and hooks in code never get `SessionStart`.
   - LangChain: `gate()` reads it from the model's response. A LangGraph `ToolNode` guard reports `not_accessed`.
   - Any other agent: `guard.call(…, { context: declaredContext({ answered }) })`; with none, `custom` and
     `not_accessed`.
