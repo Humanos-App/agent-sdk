@@ -34,7 +34,7 @@ describe('humanos init and restore — a Claude Agent SDK project, its own setti
 
     expect(await initCommand(['--yes'], ctx)).toEqual({ framework: 'claude-agent-sdk', registered: true });
     const written = JSON.parse(read(scene.dir, '.claude/settings.json'));
-    for (const event of ['PreToolUse', 'PostToolUse', 'PostToolUseFailure']) expect(written.hooks[event][0].hooks[0].command).toBe(CLAUDE_HOOK_COMMAND);
+    for (const event of ['SessionStart', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure']) expect(written.hooks[event][0].hooks[0].command).toBe(CLAUDE_HOOK_COMMAND);
     expect(written.permissions).toEqual({ allow: ['Bash'] });
     expect(written.hooks.Stop).toHaveLength(1);
     expect(read(scene.dir, '.gitignore')).toBe('node_modules/\n.humanos/\n');

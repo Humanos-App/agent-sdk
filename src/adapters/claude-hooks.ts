@@ -8,12 +8,17 @@
  * `PostToolUseFailure` settle it. Between the two, the decision waits in a `PendingCalls` store: in memory in code, in a
  * file for the command, since each command runs in its own process.
  *
+ * Each call reports its context (#654): the model the session started on (`SessionStart`, kept in the same store), and
+ * from the session's transcript the model that answered, its message's id and tokens; the run time from `PostToolUse`.
+ *
  * Names: an MCP tool arrives as `mcp__<server>__<tool>` and is checked as `<tool>` under the server's service; a
  * built-in tool (`Bash`, `Write`, `Edit`, …) by its name, under `Claude Agent SDK`.
  */
 import type { GuardCheck } from '../guard.js';
 import type { Via } from '../via.js';
+import { callContext, installedVersion, type CallContext } from '../context.js';
 import { checkCall } from './shared.js';
+import { transcriptStep } from './utils/claude-transcript.js';
 
 /** The service Claude Agent SDK's built-in tools are checked under. */
 export const BUILT_IN_SERVICE = 'Claude Agent SDK';
@@ -28,6 +33,12 @@ export interface ClaudeHookInput {
   error?: string;
   cwd?: string;
   mcp_server?: { name: string; source?: string };
+  session_id?: string;
+  transcript_path?: string;
+  /** `SessionStart`'s: the model the session runs on. */
+  model?: string;
+  /** `PostToolUse`'s: how long the tool ran. */
+  duration_ms?: number;
 }
 
 /** What a hook answers: nothing (go on), or a `PreToolUse` deny with the reason the model reads. */
@@ -38,10 +49,15 @@ type HookMatcher = { matcher?: string; hooks: HookCallback[]; timeout?: number; 
 /** `options.hooks`, as `query` takes them. */
 export type ClaudeHooks = Partial<Record<string, HookMatcher[]>>;
 
-/** Where a checked call waits for its outcome: in memory for `gate`, in a file for the command hook. */
+/** A call let through, as it waits for its outcome: its decision, and when the tool was let run (epoch ms). */
+export type PendingCall = Pick<GuardCheck, 'decisionId' | 'mandateId'> & { startedAt?: number };
+
+/** Where a checked call waits for its outcome, and a session's model for its calls: in memory for `gate`, in files for the command hook. */
 export interface PendingCalls {
-  put(toolUseId: string, checked: Pick<GuardCheck, 'decisionId' | 'mandateId'>): void | Promise<void>;
-  take(toolUseId: string): Pick<GuardCheck, 'decisionId' | 'mandateId'> | undefined | Promise<Pick<GuardCheck, 'decisionId' | 'mandateId'> | undefined>;
+  put(toolUseId: string, checked: PendingCall): void | Promise<void>;
+  take(toolUseId: string): PendingCall | undefined | Promise<PendingCall | undefined>;
+  startSession(sessionId: string, model: string): void | Promise<void>;
+  sessionModel(sessionId: string): string | undefined | Promise<string | undefined>;
 }
 
 /** A `PreToolUse` deny, with the words the model reads. */
@@ -58,19 +74,38 @@ export function claudeHooks(v: Via, pending: PendingCalls, serviceOf: (server: s
     return { service: BUILT_IN_SERVICE, tool: name };
   };
 
+  /** The call's context: the session's model, and the transcript's message that asked for the call. */
+  const contextOf = async (input: ClaudeHookInput): Promise<CallContext> => {
+    const [requested, step, version] = await Promise.all([
+      input.session_id ? pending.sessionModel(input.session_id) : undefined,
+      transcriptStep(input.transcript_path, input.tool_use_id),
+      installedVersion('@anthropic-ai/claude-agent-sdk'),
+    ]);
+    return callContext({ name: 'claude-agent-sdk', ...(version ? { version } : {}) }, { ...step, ...(requested ? { requested } : {}) });
+  };
+
   return {
+    async sessionStart(input: ClaudeHookInput): Promise<ClaudeHookOutput> {
+      if (input.session_id && input.model) await pending.startSession(input.session_id, input.model);
+      return {};
+    },
     async preToolUse(input: ClaudeHookInput): Promise<ClaudeHookOutput> {
       const { service, tool } = named(input);
       if (v.mcp.checks(service, tool)) return {}; // the proxy in front of that server checks it
-      const call = await checkCall(v, tool, (input.tool_input ?? {}) as Record<string, unknown>);
+      const call = await checkCall(v, tool, (input.tool_input ?? {}) as Record<string, unknown>, await contextOf(input));
       if (!call.ok) return denyCall(call.message);
       const { decisionId, mandateId } = call.checked;
-      if (input.tool_use_id) await pending.put(input.tool_use_id, { ...(decisionId ? { decisionId } : {}), ...(mandateId ? { mandateId } : {}) });
+      if (input.tool_use_id)
+        await pending.put(input.tool_use_id, { ...(decisionId ? { decisionId } : {}), ...(mandateId ? { mandateId } : {}), startedAt: Date.now() });
       return {}; // allowed by Humanos: the agent's own permissions still decide
     },
     async postToolUse(input: ClaudeHookInput): Promise<ClaudeHookOutput> {
-      const checked = input.tool_use_id ? await pending.take(input.tool_use_id) : undefined;
-      if (checked) await v.guard.settle(checked, failureOf(input));
+      const pendingCall = input.tool_use_id ? await pending.take(input.tool_use_id) : undefined;
+      if (!pendingCall) return {};
+      const { startedAt, ...checked } = pendingCall;
+      // Claude's own count when it sends one; else from the check, which a permission prompt in between lengthens.
+      const durationMs = typeof input.duration_ms === 'number' ? input.duration_ms : startedAt !== undefined ? Date.now() - startedAt : undefined;
+      await v.guard.settle(checked, { ...failureOf(input), ...(durationMs !== undefined ? { durationMs } : {}) });
       return {};
     },
   };
