@@ -146,8 +146,9 @@ function codeToAdd(framework: Exclude<Framework, 'claude-agent-sdk'>, service: s
       'Add to the agent’s code:',
       "  import { aiSdk } from '@humanos-ai/agent-sdk/ai-sdk';",
       '  const humanos = await aiSdk();',
-      'Then, in your generateText or streamText call (or your ToolLoopAgent), pass your tools through Humanos:',
+      'Then, in your generateText or streamText call (or your ToolLoopAgent), pass your tools and model through Humanos:',
       `  tools: humanos.guard(tools, ${s}),`,
+      '  model: humanos.model(model),',
     ],
     langchain: [
       'Add to the agent’s code:',

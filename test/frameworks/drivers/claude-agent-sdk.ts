@@ -83,7 +83,7 @@ export const inCode: FrameworkDriver = {
 /** The hooks `init` writes for Claude Agent SDK, run from the built CLI. */
 export function writeSettingsHooks(dir: string): void {
   const hook = { type: 'command', command: `${process.execPath} ${BIN} hook claude` };
-  const hooks = Object.fromEntries(['PreToolUse', 'PostToolUse', 'PostToolUseFailure'].map((e) => [e, [{ matcher: '*', hooks: [hook] }]]));
+  const hooks = Object.fromEntries(['SessionStart', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure'].map((e) => [e, [{ matcher: '*', hooks: [hook] }]]));
   mkdirSync(join(dir, '.claude'), { recursive: true });
   writeFileSync(join(dir, '.claude', 'settings.json'), JSON.stringify({ hooks }, null, 2));
 }

@@ -44,7 +44,7 @@ export class SupportAgent extends Agent<Env> {
     );
     let error: string | undefined;
     await generateText({
-      model: createAnthropic({ baseURL: `${ask.modelUrl}/v1`, apiKey: 'sk-ant-local-test' })('claude-test'),
+      model: humanos.model(createAnthropic({ baseURL: `${ask.modelUrl}/v1`, apiKey: 'sk-ant-local-test' })('claude-test')),
       tools,
       prompt: ask.prompt,
       stopWhen: stepCountIs(5),

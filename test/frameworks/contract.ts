@@ -70,7 +70,7 @@ export interface FrameworkDriver {
   skip?: Partial<Record<ScenarioId, string>>;
 }
 
-export type ScenarioId = 'declare' | 'allow' | 'deny' | 'tool-error' | 'delegate' | 'parallel' | 'down' | 'mcp-stdio' | 'mcp-http';
+export type ScenarioId = 'declare' | 'allow' | 'model' | 'deny' | 'tool-error' | 'delegate' | 'parallel' | 'down' | 'mcp-stdio' | 'mcp-http';
 
 const SERVICE = 'Support desk';
 const ORDERS = 'Orders';
@@ -183,6 +183,15 @@ export function runContract(driver: FrameworkDriver): void {
       expect(scene.decisions).toMatchObject([{ tool: 'lookup_order', decision: 'allow' }]);
       expect(scene.outcomes).toEqual([{ decisionEventId: scene.decisions[0]!.eventId, outcome: 'completed', durationMs: expect.any(Number) }]);
       expect(results[0]!.text).toContain('A-1');
+    });
+
+    // #654: read locally, never asked of the network; a custom agent declares it.
+    scenario('model', "the model that asked for the call and its step's tokens reach Humanos with the call", async () => {
+      const { scene } = await play(driver, { policy: { lookup_order: 'allow' }, steps: [{ calls: [LOOKUP] }] });
+      expect(scene.decisions[0]!.context).toMatchObject({
+        model: { answered: expect.any(String), source: expect.stringMatching(/^(framework|declared)$/) },
+        step: { id: expect.any(String), inputTokens: expect.any(Number), outputTokens: expect.any(Number) },
+      });
     });
 
     scenario('deny', 'deny: the tool never runs, nothing is reported, and the model is told why', async () => {
