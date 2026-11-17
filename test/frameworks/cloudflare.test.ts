@@ -68,7 +68,9 @@ describe('Cloudflare Agents (an Agent in workerd, through the AI SDK adapter)', 
     expect(out.runtime).toBe('Cloudflare-Workers');
     expect(out.ran).toEqual(['lookup_order']);
     expect(scene.decisions).toMatchObject([{ tool: 'lookup_order', decision: 'allow' }]);
-    expect(scene.outcomes).toEqual([{ decisionEventId: scene.decisions[0]!.eventId, outcome: 'completed' }]);
+    expect(scene.outcomes).toEqual([{ decisionEventId: scene.decisions[0]!.eventId, outcome: 'completed', durationMs: expect.any(Number) }]);
+    // #654: named from inside the Worker, the model read from the response it holds.
+    expect(scene.decisions[0]!.context).toMatchObject({ framework: { name: 'cloudflare-agents' }, model: { answered: 'claude-test', source: 'framework' } });
     expect(results[0]!.text).toContain('A-1');
   });
 
@@ -81,7 +83,7 @@ describe('Cloudflare Agents (an Agent in workerd, through the AI SDK adapter)', 
 
   it('a tool error is reported as failed', async () => {
     const { scene } = await play({ lookup_order: 'allow' }, [{ calls: [LOOKUP] }], { failing: ['lookup_order'] });
-    expect(scene.outcomes).toEqual([{ decisionEventId: scene.decisions[0]!.eventId, outcome: 'failed', error: 'order store down' }]);
+    expect(scene.outcomes).toEqual([{ decisionEventId: scene.decisions[0]!.eventId, outcome: 'failed', error: 'order store down', durationMs: expect.any(Number) }]);
   });
 
   it('Delegate: refused mandate_required while no mandate covers it', async () => {

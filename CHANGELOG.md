@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Each call reports its context with `verify` (#654): the model the framework was asked for and the one that answered,
+  that response's id and tokens, and the framework's name and version, all read locally; the outcome carries the
+  tool's run time (`durationMs`). Humanos keeps it beside the decision and never decides on it.
+  - AI SDK, OpenRouter, Cloudflare Agents: wrap the model, `humanos.model(model)`. A model left unwrapped reports
+    `not_accessed`.
+  - Claude Agent SDK: read from the session's transcript; `init` now also writes a `SessionStart` hook, which keeps the
+    session's model. Run `npx humanos init` again to add it.
+  - LangChain: `gate()` reads it from the model's response. A LangGraph `ToolNode` guard reports `not_accessed`.
+  - Any other agent: `guard.call(…, { context: declaredContext({ answered }) })`; with none, `custom` and
+    `not_accessed`.
+  - A server without it ignores the field, so this release works against every Humanos version.
+
 - `@humanos-ai/via-sdk` is a dependency, pinned to `0.8.1` (was the peer `^0.8.1`): `npm install @humanos-ai/agent-sdk`
   installs it, and an agent runs the protocol code this release was tested on. An agent that installs via-sdk itself
   at another version gets its own copy beside this one, which is harmless: the SDK passes only plain data across.

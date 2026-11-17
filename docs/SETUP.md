@@ -58,10 +58,11 @@ the tool's result, with the reason, and is told not to retry. If Humanos cannot 
 
 ### Claude Agent SDK
 
-Nothing to add. `init` writes `PreToolUse`, `PostToolUse` and `PostToolUseFailure` hooks into
+Nothing to add. `init` writes `SessionStart`, `PreToolUse`, `PostToolUse` and `PostToolUseFailure` hooks into
 `.claude/settings.json`, which the SDK loads by default. Every call is checked, the SDK's built-in tools (`Bash`,
 `Write`, `Edit`, …) as well as your MCP servers'. Built-in tools appear in the dashboard the first time they are
-called, ready for you to set their access.
+called, ready for you to set their access. Each call also reports the model that asked for it and that message's
+tokens, read from the session's own transcript.
 
 If your agent passes `settingSources: []`, add the hooks in code:
 
@@ -85,10 +86,12 @@ import { aiSdk } from '@humanos-ai/agent-sdk/ai-sdk';
 
 const humanos = await aiSdk();
 
-await generateText({ model, tools: humanos.guard(tools, 'Support desk'), prompt }); // or streamText, ToolLoopAgent
+await generateText({ model: humanos.model(model), tools: humanos.guard(tools, 'Support desk'), prompt }); // or streamText, ToolLoopAgent
 ```
 
-`guard` gives your `ToolSet` back with each `execute` checked first. AI SDK 5 and later.
+`guard` gives your `ToolSet` back with each `execute` checked first. `model` lets each call report which model asked
+for it and that response's tokens; with the model unwrapped, a call reports its model as not accessed. AI SDK 5 and
+later.
 
 MCP servers through `@ai-sdk/mcp`: guard their tools the same way, `humanos.guard(await client.tools(), 'Linear')`. To
 have each call to a remote server carry Humanos's call proof, wrap the connection instead:
@@ -113,10 +116,11 @@ import { aiSdk } from '@humanos-ai/agent-sdk/ai-sdk';
 const humanos = await aiSdk();
 const model = createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY })('anthropic/claude-haiku-5.5');
 
-await generateText({ model, tools: humanos.guard(tools, 'Support desk'), prompt });
+await generateText({ model: humanos.model(model), tools: humanos.guard(tools, 'Support desk'), prompt });
 ```
 
-Any OpenRouter model works: Humanos checks the tool calls, whichever model makes them.
+Any OpenRouter model works: Humanos checks the tool calls, whichever model makes them. With `openrouter/auto` or a
+fallback list, each call reports the model that actually answered.
 
 ### LangChain and LangGraph
 
@@ -130,7 +134,7 @@ const agent = createAgent({ model, tools, middleware: [humanos.gate({ service: '
 ```
 
 `gate` checks every tool call, those the agent loaded from MCP servers included, and declares the agent's tools on its
-first model call. LangChain 1.x.
+first model call. Each call reports the model that asked for it and that message's tokens. LangChain 1.x.
 
 In a LangGraph graph of your own, guard the tools you give your `ToolNode`:
 
@@ -138,6 +142,8 @@ In a LangGraph graph of your own, guard the tools you give your `ToolNode`:
 const tools = humanos.guard([lookupOrder, issueRefund], 'Support desk');
 graph.addNode('tools', new ToolNode(tools));
 ```
+
+A `ToolNode`'s tools see no model call, so their calls report the model as not accessed.
 
 MCP servers through `@langchain/mcp-adapters`: pass the client's servers through `humanos.mcp.servers(...)` and read
 its tools with `humanos.mcp.tools(client)`, so each tool is checked under its server, by its own name:
@@ -157,7 +163,7 @@ import { aiSdk } from '@humanos-ai/agent-sdk/ai-sdk';
 export class SupportAgent extends Agent<Env> {
   async onRequest(request: Request) {
     const humanos = await aiSdk();
-    const { text } = await generateText({ model, tools: humanos.guard(tools, 'Support desk'), prompt });
+    const { text } = await generateText({ model: humanos.model(model), tools: humanos.guard(tools, 'Support desk'), prompt });
     return Response.json({ text });
   }
 }
@@ -186,6 +192,16 @@ const humanos = await via();
 await humanos.tools.add([{ name: 'issue_refund', description: 'Refund an order.', inputSchema, service: 'Support desk' }]);
 
 const { result } = await humanos.guard.call('issue_refund', args, (a) => issueRefund(a)); // throws ViaDeniedError when refused
+```
+
+To report the model behind each call, pass what your model's reply says; without it, the call reports its model as
+not accessed:
+
+```ts
+import { declaredContext } from '@humanos-ai/agent-sdk';
+
+const context = declaredContext({ requested: 'claude-sonnet-5-5', answered: reply.model }, { id: reply.id, inputTokens: reply.usage.input_tokens, outputTokens: reply.usage.output_tokens });
+await humanos.guard.call('issue_refund', args, (a) => issueRefund(a), { context });
 ```
 
 ## 5. Set the agent's policy

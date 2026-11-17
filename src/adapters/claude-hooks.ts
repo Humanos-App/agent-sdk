@@ -20,6 +20,9 @@ import { callContext, installedVersion, type CallContext } from '../context.js';
 import { checkCall } from './shared.js';
 import { transcriptStep } from './utils/claude-transcript.js';
 
+/** How long a call waits for its message to reach the transcript; it runs beside the challenge to Humanos. */
+const TRANSCRIPT_WAIT_MS = 250;
+
 /** The service Claude Agent SDK's built-in tools are checked under. */
 export const BUILT_IN_SERVICE = 'Claude Agent SDK';
 
@@ -78,7 +81,7 @@ export function claudeHooks(v: Via, pending: PendingCalls, serviceOf: (server: s
   const contextOf = async (input: ClaudeHookInput): Promise<CallContext> => {
     const [requested, step, version] = await Promise.all([
       input.session_id ? pending.sessionModel(input.session_id) : undefined,
-      transcriptStep(input.transcript_path, input.tool_use_id),
+      transcriptStep(input.transcript_path, input.tool_use_id, TRANSCRIPT_WAIT_MS),
       installedVersion('@anthropic-ai/claude-agent-sdk'),
     ]);
     return callContext({ name: 'claude-agent-sdk', ...(version ? { version } : {}) }, { ...step, ...(requested ? { requested } : {}) });
@@ -92,7 +95,8 @@ export function claudeHooks(v: Via, pending: PendingCalls, serviceOf: (server: s
     async preToolUse(input: ClaudeHookInput): Promise<ClaudeHookOutput> {
       const { service, tool } = named(input);
       if (v.mcp.checks(service, tool)) return {}; // the proxy in front of that server checks it
-      const call = await checkCall(v, tool, (input.tool_input ?? {}) as Record<string, unknown>, await contextOf(input));
+      // Not awaited: the guard reads the context only when it verifies, after the challenge's round trip.
+      const call = await checkCall(v, tool, (input.tool_input ?? {}) as Record<string, unknown>, contextOf(input));
       if (!call.ok) return denyCall(call.message);
       const { decisionId, mandateId } = call.checked;
       if (input.tool_use_id)

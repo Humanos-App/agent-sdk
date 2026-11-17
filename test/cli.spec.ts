@@ -84,8 +84,9 @@ describe('humanos init — the other paths', () => {
       expect.arrayContaining([
         'Add to the agent’s code:',
         "  const humanos = await aiSdk();",
-        'Then, in your generateText or streamText call (or your ToolLoopAgent), pass your tools through Humanos:',
+        'Then, in your generateText or streamText call (or your ToolLoopAgent), pass your tools and model through Humanos:',
         "  tools: humanos.guard(tools, 'support-desk'),",
+        '  model: humanos.model(model),',
         expect.stringMatching(/^'support-desk' is the service: the dashboard lists these tools under it/),
       ]),
     );

@@ -8,11 +8,11 @@ import { experimental_createMCPClient as createMCPClient } from '@ai-sdk/mcp';
 import { Experimental_StdioMCPTransport as StdioMCPTransport } from '@ai-sdk/mcp/mcp-stdio';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { generateText, stepCountIs, jsonSchema, streamText, tool, type ToolSet } from 'ai';
-import { aiSdk } from '../../../src/adapters/ai-sdk.js';
+import { aiSdk, type AiSdkHumanos } from '../../../src/adapters/ai-sdk.js';
 import type { FrameworkDriver, RunContext } from '../contract.js';
 
 /** The scenario's tools and servers as an AI SDK agent has them; `close` ends the MCP clients. */
-export async function toolsFor(ctx: RunContext): Promise<{ tools: ToolSet; close: () => Promise<void> }> {
+export async function toolsFor(ctx: RunContext): Promise<{ tools: ToolSet; close: () => Promise<void>; humanos: AiSdkHumanos }> {
   const humanos = await aiSdk(ctx.via);
   const own: ToolSet = Object.fromEntries(
     ctx.tools.map((t) => [t.name, tool({ description: t.description, inputSchema: jsonSchema(t.inputSchema as never), execute: (input) => t.execute(input as Record<string, unknown>) })]),
@@ -31,7 +31,7 @@ export async function toolsFor(ctx: RunContext): Promise<{ tools: ToolSet; close
     clients.push(client);
     tools = { ...tools, ...humanos.guard(await client.tools(), service) };
   }
-  return { tools, close: async () => void (await Promise.all(clients.map((c) => c.close()))) };
+  return { tools, humanos, close: async () => void (await Promise.all(clients.map((c) => c.close()))) };
 }
 
 const model = (ctx: RunContext) => createAnthropic({ baseURL: `${ctx.llm.baseURL}/v1`, apiKey: ctx.llm.apiKey })(ctx.llm.model);
@@ -40,9 +40,9 @@ export const generate: FrameworkDriver = {
   name: 'AI SDK generateText',
   callProofOverHttp: true,
   async run(ctx) {
-    const { tools, close } = await toolsFor(ctx);
+    const { tools, close, humanos } = await toolsFor(ctx);
     try {
-      await generateText({ model: model(ctx), tools, prompt: ctx.prompt, stopWhen: stepCountIs(5) });
+      await generateText({ model: humanos.model(model(ctx)), tools, prompt: ctx.prompt, stopWhen: stepCountIs(5) });
     } finally {
       await close();
     }
@@ -53,9 +53,9 @@ export const stream: FrameworkDriver = {
   name: 'AI SDK streamText',
   callProofOverHttp: true,
   async run(ctx) {
-    const { tools, close } = await toolsFor(ctx);
+    const { tools, close, humanos } = await toolsFor(ctx);
     try {
-      const result = streamText({ model: model(ctx), tools, prompt: ctx.prompt, stopWhen: stepCountIs(5), onError: () => {} });
+      const result = streamText({ model: humanos.model(model(ctx)), tools, prompt: ctx.prompt, stopWhen: stepCountIs(5), onError: () => {} });
       await result.consumeStream();
     } finally {
       await close();

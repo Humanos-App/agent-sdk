@@ -12,9 +12,24 @@ const TAIL_BYTES = 1 << 20;
 type Usage = { input_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number; output_tokens?: number };
 type Entry = { type?: string; message?: { id?: string; model?: string; stop_reason?: string | null; usage?: Usage; content?: { type?: string; id?: string }[] } };
 
-/** The assistant message that asked for `toolUseId`; none when the transcript cannot be read or does not hold it. */
-export async function transcriptStep(path: string | undefined, toolUseId: string | undefined): Promise<StepReport | undefined> {
+/** How often the transcript is read again while the call's message is not in it yet. */
+const POLL_MS = 10;
+
+/**
+ * The assistant message that asked for `toolUseId`; none when the transcript cannot be read or does not hold it within
+ * `waitMs`. A hook in code runs before Claude writes the message (about 70 ms on a local run); a hook command, after.
+ */
+export async function transcriptStep(path: string | undefined, toolUseId: string | undefined, waitMs = 0): Promise<StepReport | undefined> {
   if (!path || !toolUseId) return undefined;
+  const until = Date.now() + waitMs;
+  for (;;) {
+    const found = await _find(path, toolUseId);
+    if (found || Date.now() >= until) return found;
+    await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+  }
+}
+
+async function _find(path: string, toolUseId: string): Promise<StepReport | undefined> {
   const tail = await _tail(path).catch(() => undefined);
   if (!tail) return undefined;
   const lines = tail.split('\n');

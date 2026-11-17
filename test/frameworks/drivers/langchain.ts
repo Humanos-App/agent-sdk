@@ -45,6 +45,7 @@ export const agent: FrameworkDriver = {
 
 export const graph: FrameworkDriver = {
   name: 'LangGraph ToolNode',
+  skip: { model: 'a ToolNode guard sees no model call, so it reports the model not accessed' },
   async run(ctx) {
     const humanos = await langchain(ctx.via);
     const mcp = await mcpTools(ctx, humanos);
