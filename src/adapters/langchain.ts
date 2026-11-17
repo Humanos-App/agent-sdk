@@ -10,14 +10,20 @@
  * MCP (`@langchain/mcp-adapters`): `mcp.servers` routes a `MultiServerMCPClient`'s stdio servers behind the proxy, and
  * `mcp.tools(client)` records which server each of its tools came from, so a tool is checked under its server's
  * service, and a routed server's tools are left to the proxy.
+ *
+ * Each call `gate()` checks reports its context (#654): `wrapModelCall` files the model asked for, the one that
+ * answered, the message's id and tokens under each tool call the response asks for; a call it did not see is read
+ * from the agent's messages. `guard()` sees no model call, so a `ToolNode`'s calls report the model `not_accessed`.
  */
 import { ToolMessage } from '@langchain/core/messages';
 import { tool, type StructuredToolInterface } from '@langchain/core/tools';
 import { toJsonSchema } from '@langchain/core/utils/json_schema';
 import { createMiddleware } from 'langchain';
+import { callContext, installedVersion, StepLedger, type CallContext, type StepReport } from '../context.js';
 import type { DeclaredTool } from '../mcp/declare.js';
 import type { Via, ViaOptions } from '../via.js';
 import { checkCall, refusalError, routeStdioEntries, runAndSettle, viaFrom } from './shared.js';
+import { askingMessage, configuredModel, messageStep, type AskingMessage } from './utils/langchain-steps.js';
 
 type Tools = readonly StructuredToolInterface[];
 /** A `MultiServerMCPClient` server entry, as far as Humanos reads it. */
@@ -60,6 +66,10 @@ const textOf = (content: unknown): string =>
 
 export async function langchain(from?: Via | ViaOptions): Promise<LangChainHumanos> {
   const v = await viaFrom(from);
+  const steps = new StepLedger();
+  const version = await installedVersion('langchain');
+  const framework = { name: 'langchain' as const, ...(version ? { version } : {}) };
+  const contextOf = (report?: StepReport): CallContext => callContext(framework, report);
   /** A tool the agent calls by `name`, as Humanos names it: its server's service, and the MCP tool's own name. */
   const fromServer = new Map<string, { service: string; tool: string }>();
   const servers = new Set<string>();
@@ -86,13 +96,20 @@ export async function langchain(from?: Via | ViaOptions): Promise<LangChainHuman
           declared = true;
           declare(request.tools.filter((t): t is StructuredToolInterface => typeof (t as StructuredToolInterface).name === 'string' && 'schema' in t), service);
         }
-        return handler(request);
+        const answer = await handler(request);
+        const asked = answer as AskingMessage;
+        const step = messageStep(asked, configuredModel(request.model));
+        for (const c of asked.tool_calls ?? []) if (c.id) steps.put(c.id, step);
+        return answer;
       },
       wrapToolCall: async (request, handler) => {
         const { name, args, id } = request.toolCall;
         const n = named(name, service);
         if (v.mcp.checks(n.service, n.tool)) return handler(request); // the proxy in front of its server checks it
-        const call = await checkCall(v, n.tool, (args ?? {}) as Record<string, unknown>);
+        // A call whose model response this middleware did not see (a resumed run) is read from the agent's messages.
+        const asking = askingMessage((request.state as { messages?: unknown }).messages, id);
+        const report = steps.take(id) ?? (asking && messageStep(asking));
+        const call = await checkCall(v, n.tool, (args ?? {}) as Record<string, unknown>, contextOf(report));
         // A refusal is the tool's answer, an error ToolMessage the model reads; the tool never runs.
         if (!call.ok) return new ToolMessage({ content: call.message, tool_call_id: id ?? '', name, status: 'error' });
         return runAndSettle(v, call.checked, () => handler(request), toolMessageFailure);
@@ -107,7 +124,7 @@ export async function langchain(from?: Via | ViaOptions): Promise<LangChainHuman
       if (v.mcp.checks(n.service, n.tool)) return t;
       return tool(
         async (input: Record<string, unknown>, config) => {
-          const call = await checkCall(v, n.tool, input ?? {});
+          const call = await checkCall(v, n.tool, input ?? {}, contextOf());
           if (!call.ok) throw refusalError(call); // the ToolNode hands the model the error's words
           return runAndSettle(v, call.checked, () => t.invoke(input, config), toolMessageFailure);
         },
