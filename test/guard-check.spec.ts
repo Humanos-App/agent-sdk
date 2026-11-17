@@ -62,6 +62,6 @@ describe('ViaGuard.check and settle — a call decided in one hook and reported 
     expect(out).toMatchObject({ decision: 'allow', result: { id: 'A-1' } });
     expect(out).not.toHaveProperty('reason');
     expect(decisions).toHaveLength(1);
-    expect(outcomes).toEqual([{ decisionEventId: decisions[0]!.eventId, outcome: 'completed' }]);
+    expect(outcomes).toEqual([{ decisionEventId: decisions[0]!.eventId, outcome: 'completed', durationMs: expect.any(Number) }]);
   });
 });
