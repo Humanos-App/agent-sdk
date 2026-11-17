@@ -59,19 +59,19 @@ export function declaredContext(model: { requested?: string; answered?: string }
  * Tool call id → the step that asked for it: filled when a model responds, read once when the call is checked.
  * Bounded, the oldest entry going first, so a call never checked cannot grow it.
  */
-export class StepLedger {
-  private readonly steps = new Map<string, StepReport>();
+export class StepLedger<T extends StepReport = StepReport> {
+  private readonly steps = new Map<string, T>();
 
   constructor(private readonly max = 1_000) {}
 
-  put(callId: string, report: StepReport): void {
+  put(callId: string, report: T): void {
     this.steps.delete(callId);
     this.steps.set(callId, report);
     if (this.steps.size > this.max) this.steps.delete(this.steps.keys().next().value as string);
   }
 
   /** The step that asked for the call, once: a call is checked once, so its entry goes. */
-  take(callId: string | undefined): StepReport | undefined {
+  take(callId: string | undefined): T | undefined {
     if (!callId) return undefined;
     const report = this.steps.get(callId);
     this.steps.delete(callId);
