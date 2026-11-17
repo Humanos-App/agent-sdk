@@ -44,9 +44,9 @@ const NOT_YET: Record<string, string> = {
   '@openrouter/sdk': 'OpenRouter SDK',
 };
 
-/** The `PreToolUse` / `PostToolUse` / `PostToolUseFailure` command `init` writes for Claude Agent SDK. */
+/** The `SessionStart` / `PreToolUse` / `PostToolUse` / `PostToolUseFailure` command `init` writes for Claude Agent SDK. */
 export const CLAUDE_HOOK_COMMAND = 'npx --no-install humanos hook claude';
-const CLAUDE_HOOK_EVENTS = ['PreToolUse', 'PostToolUse', 'PostToolUseFailure'] as const;
+const CLAUDE_HOOK_EVENTS = ['SessionStart', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure'] as const;
 
 interface Change {
   /** The file, from the project. */

@@ -12,10 +12,9 @@
  * `mcpServers` runs behind declares its; built-in tools are recorded as observed on their first call.
  */
 import { z } from 'zod';
-import type { GuardCheck } from '../guard.js';
 import type { DeclaredTool } from '../mcp/declare.js';
 import type { Via, ViaOptions } from '../via.js';
-import { claudeHooks, type ClaudeHooks } from './claude-hooks.js';
+import { claudeHooks, type ClaudeHooks, type PendingCall, type PendingCalls } from './claude-hooks.js';
 import { routeStdioEntries, viaFrom } from './shared.js';
 
 export { BUILT_IN_SERVICE, claudeHooks, denyCall } from './claude-hooks.js';
@@ -57,14 +56,21 @@ export interface ClaudeAgentSdkHumanos {
 export async function claudeAgentSdk(from?: Via | ViaOptions): Promise<ClaudeAgentSdkHumanos> {
   const v = await viaFrom(from);
   const services = new Map<string, string>();
-  const calls = new Map<string, Pick<GuardCheck, 'decisionId' | 'mandateId'>>();
-  const pending = {
-    put: (id: string, c: Pick<GuardCheck, 'decisionId' | 'mandateId'>) => void calls.set(id, c),
-    take: (id: string) => {
+  const calls = new Map<string, PendingCall>();
+  const sessions = new Map<string, string>();
+  const pending: PendingCalls = {
+    put: (id, c) => void calls.set(id, c),
+    take: (id) => {
       const c = calls.get(id);
       calls.delete(id);
       return c;
     },
+    startSession: (id, model) => {
+      sessions.set(id, model);
+      // One entry per session this process ran: the oldest goes past a hundred.
+      if (sessions.size > 100) sessions.delete(sessions.keys().next().value as string);
+    },
+    sessionModel: (id) => sessions.get(id),
   };
   const hooks = claudeHooks(v, pending, (s) => services.get(s) ?? s);
 
@@ -73,6 +79,7 @@ export async function claudeAgentSdk(from?: Via | ViaOptions): Promise<ClaudeAge
     gate(existing = {}) {
       const ours: ClaudeHooks = {
         // `block`: a hook that fails refuses the call rather than letting it through.
+        SessionStart: [{ hooks: [(input) => hooks.sessionStart(input)] }],
         PreToolUse: [{ hooks: [(input) => hooks.preToolUse(input)], onFailure: 'block' }],
         PostToolUse: [{ hooks: [(input) => hooks.postToolUse(input)] }],
         PostToolUseFailure: [{ hooks: [(input) => hooks.postToolUse(input)] }],
