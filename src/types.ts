@@ -5,6 +5,7 @@
  * mini-platform today, the real Humanos endpoints tomorrow) implements them.
  */
 import type { ActionRule, RuleEvaluation, ViaEvent } from './sdk.js';
+import type { CallContext } from './context.js';
 
 /** The verifier's answer to one presented tool call: allow or deny. Nobody is asked to confirm a call (v0.3 §17.4). */
 export interface VerifyOutcome {
@@ -94,6 +95,8 @@ export interface VerifyInput extends CallAuthority {
   pop?: string;
   /** v0.3 §16.16 — the party the call goes to, a DID or an `https` origin: an `allow` then carries the call proof. */
   audience?: string;
+  /** #654 — what the framework reports about the call, beside `params` and outside the proof. */
+  context?: CallContext;
   now?: Date;
 }
 
@@ -101,6 +104,8 @@ export interface ReportOutcomeInput extends CallAuthority {
   decisionEventId: string;
   outcome: 'completed' | 'failed';
   error?: string;
+  /** #654 — the tool's own run time in milliseconds, outside the proof. */
+  durationMs?: number;
   /** As on `VerifyInput`: absent when Humanos holds the agent's key. */
   pop?: string;
   now?: Date;

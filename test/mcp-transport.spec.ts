@@ -72,7 +72,7 @@ describe('the connection wrapper — a real MCP client and server, every call th
     expect(reached).toHaveLength(1);
     expect(reached[0]!.meta).toMatchObject({ [CALL_PROOF_META_KEY]: 'decision-token', [AGENT_RECORD_META_KEY]: 'record-token' });
     expect(decisions).toMatchObject([{ tool: 'lookup_order', decision: 'allow' }]);
-    expect(outcomes).toEqual([{ decisionEventId: decisions[0]!.eventId, outcome: 'completed' }]);
+    expect(outcomes).toEqual([{ decisionEventId: decisions[0]!.eventId, outcome: 'completed', durationMs: expect.any(Number) }]);
   });
 
   it('a local server (no https origin) gets no call proof', async () => {
@@ -96,7 +96,7 @@ describe('the connection wrapper — a real MCP client and server, every call th
     const r = (await client.callTool({ name: 'flaky_lookup', arguments: { order_id: 'A-1' } })) as Text;
     expect(r.isError).toBe(true);
     expect(textOf(r)).toBe('order store down');
-    expect(outcomes).toEqual([{ decisionEventId: decisions[0]!.eventId, outcome: 'failed', error: 'order store down' }]);
+    expect(outcomes).toEqual([{ decisionEventId: decisions[0]!.eventId, outcome: 'failed', error: 'order store down', durationMs: expect.any(Number) }]);
   });
 
   it('calls in flight together are each settled against their own decision', async () => {
