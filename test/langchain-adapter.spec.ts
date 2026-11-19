@@ -70,8 +70,8 @@ describe('langchain gate — each call reports the model that asked for it (#654
     await gate.wrapToolCall(toolCall('call_2'), ran);
 
     const context = { model: { requested: 'gpt-5', answered: 'gpt-5-2026-08-07', source: 'framework' }, step: { id: 'chatcmpl-1', inputTokens: 900, outputTokens: 40 } };
-    expect(scene.decisions.map((d) => d.context)).toEqual([expect.objectContaining(context), expect.objectContaining(context)]);
-    expect(scene.decisions[0]!.context?.framework).toEqual({ name: 'langchain', version: expect.any(String) });
+    expect(scene.decisions.map((d) => d.reported)).toEqual([expect.objectContaining(context), expect.objectContaining(context)]);
+    expect(scene.decisions[0]!.reported?.framework).toEqual({ name: 'langchain', version: expect.any(String) });
     await scene.close();
   });
 
@@ -81,7 +81,7 @@ describe('langchain gate — each call reports the model that asked for it (#654
 
     await gate.wrapToolCall(toolCall('call_1', [answer({ model_name: 'gpt-5-2026-08-07' })]), ran);
 
-    expect(scene.decisions[0]!.context?.model).toEqual({ answered: 'gpt-5-2026-08-07', source: 'framework' });
+    expect(scene.decisions[0]!.reported?.model).toEqual({ answered: 'gpt-5-2026-08-07', source: 'framework' });
     await scene.close();
   });
 
@@ -94,7 +94,7 @@ describe('langchain gate — each call reports the model that asked for it (#654
     await gate.wrapToolCall(toolCall('call_1'), ran);
     await humanos.guard([named('lookup_order')], 'Orders')[0]!.invoke({ order_id: 'A-1' });
 
-    expect(scene.decisions.map((d) => d.context?.model)).toEqual([{ source: 'not_accessed' }, { source: 'not_accessed' }]);
+    expect(scene.decisions.map((d) => d.reported?.model)).toEqual([{ source: 'not_accessed' }, { source: 'not_accessed' }]);
     await scene.close();
   });
 });

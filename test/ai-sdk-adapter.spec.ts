@@ -97,7 +97,7 @@ describe("aiSdk — each call reports the model that asked for it (#654)", () =>
     else await streamText(options).consumeStream();
 
     const step = { id: 'resp_1', inputTokens: 1200, outputTokens: 80 };
-    expect(scene.decisions.map((d) => d.context)).toEqual([
+    expect(scene.decisions.map((d) => d.reported)).toEqual([
       { v: 1, framework: { name: 'ai-sdk', version: expect.any(String) }, model: { requested: 'gpt-5', answered: 'gpt-5-2026-08-07', source: 'framework' }, step },
       { v: 1, framework: { name: 'ai-sdk', version: expect.any(String) }, model: { requested: 'gpt-5', answered: 'gpt-5-2026-08-07', source: 'framework' }, step },
     ]);
@@ -114,7 +114,7 @@ describe("aiSdk — each call reports the model that asked for it (#654)", () =>
 
     await generateText({ model: humanos.model(mockModel(['call_1'], provider)), prompt: 'Find my order', tools: humanos.guard({ lookup_order: lookup() }, 'Orders') });
 
-    expect(scene.decisions[0]!.context?.framework.name).toBe(name);
+    expect(scene.decisions[0]!.reported?.framework.name).toBe(name);
     vi.unstubAllGlobals();
     await scene.close();
   });
@@ -125,7 +125,7 @@ describe("aiSdk — each call reports the model that asked for it (#654)", () =>
 
     await generateText({ model: mockModel(['call_1']), prompt: 'Find my order', tools: humanos.guard({ lookup_order: lookup() }, 'Orders') });
 
-    expect(scene.decisions[0]!.context).toEqual({ v: 1, framework: { name: 'ai-sdk', version: expect.any(String) }, model: { source: 'not_accessed' } });
+    expect(scene.decisions[0]!.reported).toEqual({ v: 1, framework: { name: 'ai-sdk', version: expect.any(String) }, model: { source: 'not_accessed' } });
     await scene.close();
   });
 });

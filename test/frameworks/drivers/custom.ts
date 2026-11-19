@@ -23,12 +23,12 @@ export const custom: FrameworkDriver = {
 
     // The agent's own tools: declared once, each call through the guard.
     void via.tools.add(ctx.tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema, service: ctx.service })));
-    const run = new Map<string, (input: Record<string, unknown>, context?: CallContext) => Promise<{ text: string; isError: boolean }>>();
+    const run = new Map<string, (input: Record<string, unknown>, reported?: CallContext) => Promise<{ text: string; isError: boolean }>>();
     for (const t of ctx.tools) {
       run.set(t.name, async (input, context) => {
         try {
           // A custom agent knows its model from the reply it holds: it declares it with the call.
-          const out = await via.guard.call(t.name, input, (a) => t.execute(a), context ? { context } : {});
+          const out = await via.guard.call(t.name, input, (a) => t.execute(a), context ? { reported: context } : {});
           return { text: JSON.stringify(out.result), isError: false };
         } catch (e) {
           if (e instanceof ViaDeniedError) return { text: `Blocked by Humanos (${e.reason})`, isError: true };

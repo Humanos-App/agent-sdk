@@ -96,7 +96,7 @@ export interface LiveAgent {
 export interface SentContext {
   decisionEventUrn: string;
   tool: string;
-  context: CallContext;
+  reported: CallContext;
   durationMs?: number;
 }
 
@@ -135,11 +135,11 @@ export async function liveAgent(cfg: LiveConfig): Promise<LiveAgent> {
     sent: () => {
       const reported = new Map(calls.filter((c) => c.tool === 'report_outcome').map((c) => [String(c.args.decisionEventId), c.args.durationMs]));
       return calls
-        .filter((c) => c.tool === 'verify' && typeof c.answer?.decisionEventId === 'string' && c.args.context)
+        .filter((c) => c.tool === 'verify' && typeof c.answer?.decisionEventId === 'string' && c.args.reported)
         .map((c) => {
           const decisionEventUrn = String(c.answer!.decisionEventId);
           const durationMs = reported.get(decisionEventUrn);
-          return { decisionEventUrn, tool: String(c.args.tool), context: c.args.context as CallContext, ...(typeof durationMs === 'number' ? { durationMs } : {}) };
+          return { decisionEventUrn, tool: String(c.args.tool), reported: c.args.reported as CallContext, ...(typeof durationMs === 'number' ? { durationMs } : {}) };
         });
     },
   };

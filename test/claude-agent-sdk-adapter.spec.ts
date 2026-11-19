@@ -66,7 +66,7 @@ describe('claudeHooks — how a Claude call is named, checked and settled', () =
 
     await hooks.preToolUse(pre('mcp__support__lookup_order', { session_id: 's1', transcript_path: transcript(scene.dir, stopReason) }));
 
-    expect(scene.decisions[0]!.context).toMatchObject({
+    expect(scene.decisions[0]!.reported).toMatchObject({
       framework: { name: 'claude-agent-sdk' },
       model: { requested: 'claude-sonnet-5-5', answered: 'claude-sonnet-5-5-20261001', source: 'framework' },
       step: { id: 'msg_1', inputTokens: 100, outputTokens: 5, ...partial },
@@ -79,7 +79,7 @@ describe('claudeHooks — how a Claude call is named, checked and settled', () =
 
     await claudeHooks(scene.via, memory()).preToolUse(pre('mcp__support__lookup_order', { transcript_path: join(scene.dir, 'missing.jsonl') }));
 
-    expect(scene.decisions[0]!.context?.model).toEqual({ source: 'not_accessed' });
+    expect(scene.decisions[0]!.reported?.model).toEqual({ source: 'not_accessed' });
     await scene.close();
   });
 
@@ -120,7 +120,7 @@ describe('humanos hook claude', () => {
     expect(await run({ hook_event_name: 'SessionStart', model: 'claude-opus-5-5' })).toBe('');
     await run(pre('mcp__support__lookup_order'));
 
-    expect(scene.decisions[0]!.context?.model).toEqual({ requested: 'claude-opus-5-5', source: 'framework' });
+    expect(scene.decisions[0]!.reported?.model).toEqual({ requested: 'claude-opus-5-5', source: 'framework' });
     await scene.close();
   });
 

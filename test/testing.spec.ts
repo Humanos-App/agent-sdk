@@ -31,10 +31,10 @@ describe('createTestVerifier', () => {
     const { t, guard } = await setup();
     const context = declaredContext({ answered: 'gpt-5' }, { id: 'resp_1', inputTokens: 900, outputTokens: 40 });
 
-    const out = await guard.call('pay', { amount: 50 }, () => 'paid', { context });
+    const out = await guard.call('pay', { amount: 50 }, () => 'paid', { reported: context });
 
     expect(out).toMatchObject({ decision: 'allow', result: 'paid' });
-    expect(t.decisions[0]).toMatchObject({ decision: 'allow', context });
+    expect(t.decisions[0]).toMatchObject({ decision: 'allow', reported: context });
   });
 
   it("reports the tool's own run time with its outcome (#654)", async () => {
@@ -50,7 +50,7 @@ describe('createTestVerifier', () => {
 
     await guard.call('pay', { amount: 50 }, () => 'paid');
 
-    expect(t.decisions[0]!.context).toEqual(UNREPORTED);
+    expect(t.decisions[0]!.reported).toEqual(UNREPORTED);
   });
 
   it('allows within the rules, runs the tool, and records the completed outcome against the decision', async () => {

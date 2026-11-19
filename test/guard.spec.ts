@@ -337,7 +337,7 @@ describe('ViaGuard with no agentKey — Humanos holds the key (v0.3 §16.14)', (
       tool: 'book_load',
       params: { load_id: 'L-1', tool: 'book_load' },
       audience: 'https://carrier.example',
-      context: UNREPORTED,
+      reported: UNREPORTED,
       now: undefined,
     });
     expect(r.reported[0]).toEqual({

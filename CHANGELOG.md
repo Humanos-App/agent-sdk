@@ -11,7 +11,7 @@
     where Claude's `SessionStart` hook carries it, which `init` now also writes (run `npx humanos init` again to add
     it); Agent SDK runs (0.3.317) do not send it, and hooks in code never get `SessionStart`.
   - LangChain: `gate()` reads it from the model's response. A LangGraph `ToolNode` guard reports `not_accessed`.
-  - Any other agent: `guard.call(…, { context: declaredContext({ answered }) })`; with none, `custom` and
+  - Any other agent: `guard.call(…, { reported: declaredContext({ answered }) })`; with none, `custom` and
     `not_accessed`.
   - A server without it ignores the field, so this release works against every Humanos version.
 

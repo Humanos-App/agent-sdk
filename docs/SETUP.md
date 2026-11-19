@@ -201,7 +201,7 @@ not accessed:
 import { declaredContext } from '@humanos-ai/agent-sdk';
 
 const context = declaredContext({ requested: 'claude-sonnet-5-5', answered: reply.model }, { id: reply.id, inputTokens: reply.usage.input_tokens, outputTokens: reply.usage.output_tokens });
-await humanos.guard.call('issue_refund', args, (a) => issueRefund(a), { context });
+await humanos.guard.call('issue_refund', args, (a) => issueRefund(a), { reported: context });
 ```
 
 ## 5. Set the agent's policy

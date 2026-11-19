@@ -188,7 +188,7 @@ export function runContract(driver: FrameworkDriver): void {
     // #654: read locally, never asked of the network; a custom agent declares it.
     scenario('model', "the model that asked for the call and its step's tokens reach Humanos with the call", async () => {
       const { scene } = await play(driver, { policy: { lookup_order: 'allow' }, steps: [{ calls: [LOOKUP] }] });
-      expect(scene.decisions[0]!.context).toMatchObject({
+      expect(scene.decisions[0]!.reported).toMatchObject({
         model: { answered: expect.any(String), source: expect.stringMatching(/^(framework|declared)$/) },
         step: { id: expect.any(String), inputTokens: expect.any(Number), outputTokens: expect.any(Number) },
       });

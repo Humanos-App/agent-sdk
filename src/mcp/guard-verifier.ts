@@ -77,7 +77,7 @@ export class McpGuardVerifier implements GuardVerifier {
       params: input.params,
       ...(input.pop ? { pop: input.pop } : {}),
       ...(input.audience ? { audience: input.audience } : {}),
-      ...(input.context ? { context: input.context } : {}),
+      ...(input.reported ? { reported: input.reported } : {}),
     });
     if (r.isError) throw new McpVerifierError('verify', r.text);
     return parse<VerifyOutcome>('verify', r.text);

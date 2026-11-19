@@ -117,7 +117,7 @@ function governTransport<T extends McpTransportLike>(deps: ViaMcpDeps, service: 
     const name = String(message.params?.name ?? '');
     const args = (message.params?.arguments ?? {}) as Record<string, unknown>;
     // A tools/call carries no model: the proxy reports only that it checked the call (#654).
-    const checked = await deps.guard.check(name, args, { ...audienceOf(options.origin), context: PROXIED });
+    const checked = await deps.guard.check(name, args, { ...audienceOf(options.origin), reported: PROXIED });
     if (!checked.proceed) {
       // Answered here, after `send` returns, as the server would have: the framework reads it as the tool's result.
       const result = { content: [{ type: 'text', text: refusalText({ name, service }, checked, plainReason) }], isError: true };

@@ -31,10 +31,10 @@ export function unreachable(error: unknown): string {
 export type CallCheck = { ok: true; checked: GuardCheck } | { ok: false; message: string; checked?: GuardCheck };
 
 /** Check one call, with what the framework reports about it. Fails closed: a call Humanos cannot be asked about is refused. */
-export async function checkCall(v: Via, tool: string, args: Record<string, unknown>, context?: CallContext | Promise<CallContext>): Promise<CallCheck> {
+export async function checkCall(v: Via, tool: string, args: Record<string, unknown>, reported?: CallContext | Promise<CallContext>): Promise<CallCheck> {
   let checked: GuardCheck;
   try {
-    checked = await v.guard.check(tool, args, context ? { context } : {});
+    checked = await v.guard.check(tool, args, reported ? { reported } : {});
   } catch (e) {
     return { ok: false, message: unreachable(e) };
   }

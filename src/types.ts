@@ -96,7 +96,7 @@ export interface VerifyInput extends CallAuthority {
   /** v0.3 §16.16 — the party the call goes to, a DID or an `https` origin: an `allow` then carries the call proof. */
   audience?: string;
   /** #654 — what the framework reports about the call, beside `params` and outside the proof. */
-  context?: CallContext;
+  reported?: CallContext;
   now?: Date;
 }
 

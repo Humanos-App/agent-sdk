@@ -92,14 +92,14 @@ describe.skipIf(!cfg)('live: a real platform', () => {
       it('reports the model that asked for the call, its tokens, and the run time', async () => {
         const { sent: call } = await ask(driver, 'lookup_order', { order_id: 'A-1' });
         const { name, source } = REPORTS.get(driver)!;
-        expect(call?.context).toMatchObject({ v: 1, framework: { name }, model: { source } });
+        expect(call?.reported).toMatchObject({ v: 1, framework: { name }, model: { source } });
         if (source !== 'not_accessed') {
-          expect(call!.context.model.answered).toMatch(/\S/);
-          expect(call!.context.step).toMatchObject({ id: expect.stringMatching(/\S/), inputTokens: expect.any(Number), outputTokens: expect.any(Number) });
-          expect(call!.context.step!.inputTokens).toBeGreaterThan(0);
+          expect(call!.reported.model.answered).toMatch(/\S/);
+          expect(call!.reported.step).toMatchObject({ id: expect.stringMatching(/\S/), inputTokens: expect.any(Number), outputTokens: expect.any(Number) });
+          expect(call!.reported.step!.inputTokens).toBeGreaterThan(0);
         }
         expect(call?.durationMs).toEqual(expect.any(Number));
-        process.stderr.write(`live: ${driver.name}: ${JSON.stringify(call?.context)}\n`);
+        process.stderr.write(`live: ${driver.name}: ${JSON.stringify(call?.reported)}\n`);
       });
 
       it('Deny: the call never runs', async () => {

@@ -60,7 +60,7 @@ export interface TestDecision {
   /** The mandate the call presented; none when it bound the policy. */
   mandateId?: string;
   /** What the framework reported about the call (#654). */
-  context?: CallContext;
+  reported?: CallContext;
 }
 
 export interface TestOutcome {
@@ -123,7 +123,7 @@ export function createTestVerifier(opts: TestVerifierOptions): {
       ...(o.reason ? { reason: o.reason } : {}),
       ...(o.decisionEventId ? { eventId: o.decisionEventId } : {}),
       ...(mandateId ? { mandateId } : {}),
-      ...(context ? { context } : {}),
+      ...(context ? { reported: context } : {}),
     });
     return o;
   };
@@ -135,7 +135,7 @@ export function createTestVerifier(opts: TestVerifierOptions): {
       nonces.add(nonce);
       return { nonce, aud: 'did:web:verifier.test', ttl: 60, iat: Math.floor(Date.now() / 1000), ...(opts.policy ? { policy: TEST_POLICY } : {}) };
     },
-    verify: async ({ tool, params, pop, context, ...authority }) => {
+    verify: async ({ tool, params, pop, reported: context, ...authority }) => {
       const answer = (o: Omit<VerifyOutcome, 'decisionEventId'>) => record(tool, authority.mandateId, context, { ...o, decisionEventId: eventId() });
       if (!(await popOk(pop, authority, tool, params))) return answer({ decision: 'deny', reason: 'pop_invalid', evaluations: [] });
       const { access, unset } = accessOf(tool);
