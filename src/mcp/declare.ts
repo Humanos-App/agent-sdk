@@ -15,6 +15,8 @@
  */
 import type { ViaMcpClient } from './client.js';
 import type { UpstreamServer, UpstreamTool } from './upstream.js';
+import { toolKey } from '../sdk.js';
+import type { GuardTool } from '../types.js';
 
 /** The most tools one `declare_tools` call takes: the platform refuses a larger call outright. */
 export const DECLARE_TOOLS_MAX = 500;
@@ -117,4 +119,28 @@ function warningsFor(d: ServiceDeclaration): string[] {
   if (malformed.length) out.push(`${malformed.length} tool(s) of ${d.service} were left out: ${malformed.map((s) => `${s.name ?? `#${s.index}`} (${s.reason})`).join(', ')}`);
   if (d.capped) out.push(`${d.capped} tool(s) of ${d.service} had text over a size limit: recorded, cut to fit`);
   return out;
+}
+
+/**
+ * v0.4 §15.3 — a tool as the guard names it under a v0.4 policy: its key from the service it is declared under and
+ * its own name, and its definition exactly as it was declared, so the hash the call carries is the hash of what
+ * Humanos has on record. With no declaration the tool is known by name only, as a hook knows it. Nothing when the
+ * service and the name make no key.
+ */
+export function guardTool(service: string, name: string, declared?: DeclaredTool): GuardTool | undefined {
+  const key = toolKey(service, name);
+  if (!key) return undefined;
+  if (!declared) return { key };
+  const { title, description, inputSchema, outputSchema, annotations } = declared;
+  return {
+    key,
+    definition: {
+      name,
+      ...(title !== undefined ? { title } : {}),
+      ...(description !== undefined ? { description } : {}),
+      ...(inputSchema !== undefined ? { inputSchema } : {}),
+      ...(outputSchema !== undefined ? { outputSchema } : {}),
+      ...(annotations !== undefined ? { annotations: annotations as Record<string, unknown> } : {}),
+    },
+  };
 }

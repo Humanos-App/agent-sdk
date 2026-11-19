@@ -13,7 +13,7 @@
 import { asSchema, type ToolSet } from 'ai';
 import type { DeclaredTool } from '../mcp/declare.js';
 import type { Via, ViaOptions } from '../via.js';
-import { checkCall, refusalError, runAndSettle, viaFrom } from './shared.js';
+import { checkCall, guardTool, refusalError, runAndSettle, viaFrom } from './shared.js';
 
 export interface AiSdkHumanos {
   via: Via;
@@ -43,7 +43,9 @@ export async function aiSdk(from?: Via | ViaOptions): Promise<AiSdkHumanos> {
     );
 
   const guard = <T extends ToolSet>(tools: T, service: string): T => {
-    void describe(tools, service).then((d) => v.tools.add(d)).catch(() => {}); // the registry warns on a failed declaration
+    // Described once: what is declared is what each call's hash is over (v0.4 §15.3).
+    const described = describe(tools, service).catch((): DeclaredTool[] => []);
+    void described.then((d) => v.tools.add(d)).catch(() => {}); // the registry warns on a failed declaration
     const guarded: Record<string, unknown> = {};
     for (const [name, t] of Object.entries(tools)) {
       const execute = t.execute as Execute | undefined;
@@ -56,7 +58,8 @@ export async function aiSdk(from?: Via | ViaOptions): Promise<AiSdkHumanos> {
         ...t,
         // AI SDK hands the model a thrown error's message: a refusal throws, in the words every adapter uses.
         execute: async (input: unknown, options: unknown) => {
-          const call = await checkCall(v, name, (input ?? {}) as Record<string, unknown>);
+          const declared = (await described).find((d) => d.name === name);
+          const call = await checkCall(v, name, (input ?? {}) as Record<string, unknown>, guardTool(service, name, declared));
           if (!call.ok) throw refusalError(call);
           return runAndSettle(v, call.checked, () => execute(input, options));
         },

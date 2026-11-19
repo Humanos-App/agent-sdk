@@ -17,7 +17,7 @@ import { toJsonSchema } from '@langchain/core/utils/json_schema';
 import { createMiddleware } from 'langchain';
 import type { DeclaredTool } from '../mcp/declare.js';
 import type { Via, ViaOptions } from '../via.js';
-import { checkCall, refusalError, routeStdioEntries, runAndSettle, viaFrom } from './shared.js';
+import { checkCall, guardTool, refusalError, routeStdioEntries, runAndSettle, viaFrom } from './shared.js';
 
 type Tools = readonly StructuredToolInterface[];
 /** A `MultiServerMCPClient` server entry, as far as Humanos reads it. */
@@ -64,6 +64,9 @@ export async function langchain(from?: Via | ViaOptions): Promise<LangChainHuman
   const fromServer = new Map<string, { service: string; tool: string }>();
   const servers = new Set<string>();
   const named = (name: string, service: string) => fromServer.get(name) ?? { service, tool: name };
+  /** Each tool as it was described, by its service and name: what a call's hash is over (v0.4 §15.3). */
+  const described = new Map<string, DeclaredTool>();
+  const asGuarded = (n: { service: string; tool: string }) => guardTool(n.service, n.tool, described.get(`${n.service}\u0000${n.tool}`));
 
   const describe = (tools: Tools, service: string): DeclaredTool[] =>
     tools.map((t) => {
@@ -73,7 +76,9 @@ export async function langchain(from?: Via | ViaOptions): Promise<LangChainHuman
   /** Declared here unless the proxy a routed server runs behind declares it. */
   const declare = (tools: Tools, service: string) => {
     const own = tools.filter((t) => { const n = named(t.name, service); return !v.mcp.checks(n.service, n.tool); });
-    if (own.length) void v.tools.add(describe(own, service)).catch(() => {}); // the registry warns on a failed declaration
+    const declared = describe(own, service);
+    for (const d of declared) described.set(`${d.service}\u0000${d.name}`, d);
+    if (own.length) void v.tools.add(declared).catch(() => {}); // the registry warns on a failed declaration
   };
 
   const gate = (options: { service?: string } = {}) => {
@@ -92,7 +97,7 @@ export async function langchain(from?: Via | ViaOptions): Promise<LangChainHuman
         const { name, args, id } = request.toolCall;
         const n = named(name, service);
         if (v.mcp.checks(n.service, n.tool)) return handler(request); // the proxy in front of its server checks it
-        const call = await checkCall(v, n.tool, (args ?? {}) as Record<string, unknown>);
+        const call = await checkCall(v, n.tool, (args ?? {}) as Record<string, unknown>, asGuarded(n));
         // A refusal is the tool's answer, an error ToolMessage the model reads; the tool never runs.
         if (!call.ok) return new ToolMessage({ content: call.message, tool_call_id: id ?? '', name, status: 'error' });
         return runAndSettle(v, call.checked, () => handler(request), toolMessageFailure);
@@ -107,7 +112,7 @@ export async function langchain(from?: Via | ViaOptions): Promise<LangChainHuman
       if (v.mcp.checks(n.service, n.tool)) return t;
       return tool(
         async (input: Record<string, unknown>, config) => {
-          const call = await checkCall(v, n.tool, input ?? {});
+          const call = await checkCall(v, n.tool, input ?? {}, asGuarded(n));
           if (!call.ok) throw refusalError(call); // the ToolNode hands the model the error's words
           return runAndSettle(v, call.checked, () => t.invoke(input, config), toolMessageFailure);
         },

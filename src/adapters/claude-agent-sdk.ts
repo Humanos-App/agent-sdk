@@ -66,7 +66,9 @@ export async function claudeAgentSdk(from?: Via | ViaOptions): Promise<ClaudeAge
       return c;
     },
   };
-  const hooks = claudeHooks(v, pending, (s) => services.get(s) ?? s);
+  /** Each in-process server's tools as declared, by service and name: what a call's hash is over (v0.4 §15.3). */
+  const declared = new Map<string, DeclaredTool>();
+  const hooks = claudeHooks(v, pending, (s) => services.get(s) ?? s, (service, tool) => declared.get(`${service}\u0000${tool}`));
 
   return {
     via: v,
@@ -90,6 +92,7 @@ export async function claudeAgentSdk(from?: Via | ViaOptions): Promise<ClaudeAge
         inputSchema: z.toJSONSchema(z.object(t.inputSchema)) as Record<string, unknown>,
         ...(t.annotations ? { annotations: t.annotations } : {}),
       }));
+      for (const t of tools) declared.set(`${service}\u0000${t.name}`, t);
       if (tools.length) void v.tools.add(tools).catch(() => {}); // the registry warns on a failed declaration
       return options;
     },

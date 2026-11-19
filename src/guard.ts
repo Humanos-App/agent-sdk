@@ -202,7 +202,7 @@ export class ViaGuard {
     tool: string,
     args: Record<string, unknown>,
     impl: ToolFn,
-    opts: { audience?: string } = {},
+    opts: { audience?: string; named?: GuardTool } = {},
   ): Promise<GuardCallOutcome<T>> {
     const checked = await this.check(tool, args, opts);
     if (!checked.proceed) {
@@ -225,9 +225,13 @@ export class ViaGuard {
    * decision, with nothing run. When `proceed` is true the caller runs the tool and then `settle`s it; when false the
    * tool must not run, and nothing is reported.
    */
-  async check(tool: string, args: Record<string, unknown>, opts: { audience?: string } = {}): Promise<GuardCheck> {
+  /**
+   * `opts.named` — the tool as a v0.4 policy names it and its definition as the caller holds it: what an adapter
+   * that knows the tool passes, in place of the guard's own `tools`.
+   */
+  async check(tool: string, args: Record<string, unknown>, opts: { audience?: string; named?: GuardTool } = {}): Promise<GuardCheck> {
     const params = { ...args, tool };
-    const named = await this.opts.tools?.(tool);
+    const named = opts.named ?? (await this.opts.tools?.(tool));
     const call = { tool, args, ...(named ? { named } : {}) };
     let presented = await this.mandateFor(tool, params, named?.key);
 

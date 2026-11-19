@@ -25,7 +25,7 @@ import type { ViaAgentKey } from '../key-provider.js';
 import { AGENT_RECORD_HEADER, AGENT_RECORD_META_KEY, CALL_PROOF_HEADER, CALL_PROOF_META_KEY } from '@humanos-ai/via-sdk';
 import type { VerifyOutcome } from '../types.js';
 import type { ViaMcpClient } from './client.js';
-import { declareTools, type DeclaredTool, type ServiceDeclaration } from './declare.js';
+import { declareTools, guardTool, type DeclaredTool, type ServiceDeclaration } from './declare.js';
 import { McpGuardVerifier, coveringMandate, policyMandates, type AgentPolicy, type GuardMandate } from './guard-verifier.js';
 import { audienceOf, refusalText } from './refusal.js';
 import { defaultPlainReason, type JsonRpcMessage } from './server.js';
@@ -237,6 +237,8 @@ export async function startViaMcpProxy(cfg: ViaMcpProxyConfig): Promise<ViaMcpPr
     const tool = byName.get(name);
     if (!tool) return text(`Unknown tool ${name}.`, true);
     try {
+      // The tool as its server lists it now: under a v0.4 policy the call names that definition (§15.3).
+      const named = guardTool(tool.service, tool.upstreamName, { ...tool.definition, name: tool.upstreamName, service: tool.service });
       const out = await guard.call<UpstreamResult>(
         tool.upstreamName,
         args,
@@ -248,7 +250,7 @@ export async function startViaMcpProxy(cfg: ViaMcpProxyConfig): Promise<ViaMcpPr
           if (r.isError) throw new UpstreamToolError(r); // reported as ACTION_FAILED, then surfaced as the server said it
           return r;
         },
-        audienceOf(tool.upstream.server?.origin),
+        { ...audienceOf(tool.upstream.server?.origin), ...(named ? { named } : {}) },
       );
       const r = out.result;
       if (!r) return text('', false);

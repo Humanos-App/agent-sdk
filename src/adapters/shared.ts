@@ -5,6 +5,10 @@
  * error `ToolMessage`, a hook's deny), so every framework refuses the same way.
  */
 import { ViaDeniedError, type GuardCheck } from '../guard.js';
+import { guardTool } from '../mcp/declare.js';
+import type { GuardTool } from '../types.js';
+
+export { guardTool };
 import { defaultPlainReason } from '../mcp/server.js';
 import { runChecked } from '../mcp/transport.js';
 import { via, type Via, type ViaOptions } from '../via.js';
@@ -30,10 +34,10 @@ export function unreachable(error: unknown): string {
 export type CallCheck = { ok: true; checked: GuardCheck } | { ok: false; message: string; checked?: GuardCheck };
 
 /** Check one call. Fails closed: a call Humanos cannot be asked about is refused, never let through. */
-export async function checkCall(v: Via, tool: string, args: Record<string, unknown>): Promise<CallCheck> {
+export async function checkCall(v: Via, tool: string, args: Record<string, unknown>, named?: GuardTool): Promise<CallCheck> {
   let checked: GuardCheck;
   try {
-    checked = await v.guard.check(tool, args);
+    checked = await v.guard.check(tool, args, named ? { named } : {});
   } catch (e) {
     return { ok: false, message: unreachable(e) };
   }

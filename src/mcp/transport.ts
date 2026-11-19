@@ -15,7 +15,7 @@
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { ViaGuard, GuardCheck } from '../guard.js';
-import type { DeclaredTool } from './declare.js';
+import { guardTool, type DeclaredTool } from './declare.js';
 import { callProofExtra } from './proxy.js';
 import { audienceOf, refusalText } from './refusal.js';
 import { defaultPlainReason, type JsonRpcMessage } from './server.js';
@@ -102,6 +102,8 @@ function governTransport<T extends McpTransportLike>(deps: ViaMcpDeps, service: 
   const warn = deps.onWarning ?? ((m: string) => void process.stderr.write(`via: ${m}\n`));
   const listing = new Set<Id>();
   const calls = new Map<Id, GuardCheck>();
+  /** Each tool as the server last listed it: what a call's hash is over under a v0.4 policy (§15.3). */
+  const listedAs = new Map<string, DeclaredTool>();
   let handler: McpTransportLike['onmessage'];
 
   const deliver = (message: unknown, extra?: unknown): void => handler?.call(inner, message, extra);
@@ -112,7 +114,8 @@ function governTransport<T extends McpTransportLike>(deps: ViaMcpDeps, service: 
 
     const name = String(message.params?.name ?? '');
     const args = (message.params?.arguments ?? {}) as Record<string, unknown>;
-    const checked = await deps.guard.check(name, args, audienceOf(options.origin));
+    const named = guardTool(service, name, listedAs.get(name));
+    const checked = await deps.guard.check(name, args, { ...audienceOf(options.origin), ...(named ? { named } : {}) });
     if (!checked.proceed) {
       // Answered here, after `send` returns, as the server would have: the framework reads it as the tool's result.
       const result = { content: [{ type: 'text', text: refusalText({ name, service }, checked, plainReason) }], isError: true };
@@ -157,6 +160,10 @@ function governTransport<T extends McpTransportLike>(deps: ViaMcpDeps, service: 
       service,
       ...(options.server ? { server: options.server } : {}),
     }));
+    // A new list replaces the last: a tool the server changed is called from its new definition, and one it dropped
+    // from none.
+    listedAs.clear();
+    for (const t of tools) listedAs.set(t.name, t);
     if (tools.length) void deps.tools.add(tools).catch(() => {}); // the registry warns on its own
   };
 

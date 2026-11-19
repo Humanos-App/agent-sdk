@@ -13,7 +13,8 @@
  */
 import type { GuardCheck } from '../guard.js';
 import type { Via } from '../via.js';
-import { checkCall } from './shared.js';
+import type { DeclaredTool } from '../mcp/declare.js';
+import { checkCall, guardTool } from './shared.js';
 
 /** The service Claude Agent SDK's built-in tools are checked under. */
 export const BUILT_IN_SERVICE = 'Claude Agent SDK';
@@ -49,8 +50,19 @@ export const denyCall = (reason: string): ClaudeHookOutput => ({
   hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason },
 });
 
-/** The hooks over a store: what `gate` and `humanos hook claude` both run. `serviceOf` names a server's service. */
-export function claudeHooks(v: Via, pending: PendingCalls, serviceOf: (server: string) => string = (s) => s) {
+/**
+ * The hooks over a store: what `gate` and `humanos hook claude` both run. `serviceOf` names a server's service.
+ *
+ * A hook is handed a tool's name and inputs and no definition, so under a v0.4 policy a tool it checks is known by
+ * name only (v0.4 §13.0): Claude's own tools, and a server it reaches directly. `declaredOf` gives the definition of
+ * a tool the process itself declared (an in-process server's), which is then checked as any tool with one.
+ */
+export function claudeHooks(
+  v: Via,
+  pending: PendingCalls,
+  serviceOf: (server: string) => string = (s) => s,
+  declaredOf: (service: string, tool: string) => DeclaredTool | undefined = () => undefined,
+) {
   const named = (input: ClaudeHookInput): { service: string; tool: string } => {
     const name = input.tool_name ?? '';
     const parts = name.split('__');
@@ -62,7 +74,7 @@ export function claudeHooks(v: Via, pending: PendingCalls, serviceOf: (server: s
     async preToolUse(input: ClaudeHookInput): Promise<ClaudeHookOutput> {
       const { service, tool } = named(input);
       if (v.mcp.checks(service, tool)) return {}; // the proxy in front of that server checks it
-      const call = await checkCall(v, tool, (input.tool_input ?? {}) as Record<string, unknown>);
+      const call = await checkCall(v, tool, (input.tool_input ?? {}) as Record<string, unknown>, guardTool(service, tool, declaredOf(service, tool)));
       if (!call.ok) return denyCall(call.message);
       const { decisionId, mandateId } = call.checked;
       if (input.tool_use_id) await pending.put(input.tool_use_id, { ...(decisionId ? { decisionId } : {}), ...(mandateId ? { mandateId } : {}) });
