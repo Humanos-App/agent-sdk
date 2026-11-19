@@ -5,6 +5,7 @@
  * error `ToolMessage`, a hook's deny), so every framework refuses the same way.
  */
 import { ViaDeniedError, type GuardCheck } from '../guard.js';
+import type { CallContext } from '../context.js';
 import { defaultPlainReason } from '../mcp/server.js';
 import { runChecked } from '../mcp/transport.js';
 import { via, type Via, type ViaOptions } from '../via.js';
@@ -29,11 +30,11 @@ export function unreachable(error: unknown): string {
 /** A call's check: go on with `checked`, or the refusal's words (with the check when Humanos refused it, none when it could not be asked). */
 export type CallCheck = { ok: true; checked: GuardCheck } | { ok: false; message: string; checked?: GuardCheck };
 
-/** Check one call. Fails closed: a call Humanos cannot be asked about is refused, never let through. */
-export async function checkCall(v: Via, tool: string, args: Record<string, unknown>): Promise<CallCheck> {
+/** Check one call, with what the framework reports about it. Fails closed: a call Humanos cannot be asked about is refused. */
+export async function checkCall(v: Via, tool: string, args: Record<string, unknown>, reported?: CallContext | Promise<CallContext>): Promise<CallCheck> {
   let checked: GuardCheck;
   try {
-    checked = await v.guard.check(tool, args);
+    checked = await v.guard.check(tool, args, reported ? { reported } : {});
   } catch (e) {
     return { ok: false, message: unreachable(e) };
   }
@@ -50,20 +51,22 @@ export function refusalError(refused: Extract<CallCheck, { ok: false }>): Error 
 }
 
 /**
- * Run a checked call and report its outcome once: failed when `run` throws (rethrown as the framework would see it),
- * or when `failure` reads one in what it returned; completed otherwise. It runs inside `runChecked`, so a wrapped MCP
- * connection the call reaches does not check it a second time.
+ * Run a checked call and report its outcome once, with the tool's run time: failed when `run` throws (rethrown as the
+ * framework would see it), or when `failure` reads one in what it returned; completed otherwise. It runs inside
+ * `runChecked`, so a wrapped MCP connection the call reaches does not check it a second time.
  */
 export async function runAndSettle<T>(v: Via, checked: GuardCheck, run: () => T | Promise<T>, failure?: (out: T) => string | undefined): Promise<T> {
+  const started = performance.now();
+  const durationMs = () => Math.round(performance.now() - started);
   let out: T;
   try {
     out = await runChecked(run);
   } catch (e) {
-    await v.guard.settle(checked, { error: e });
+    await v.guard.settle(checked, { error: e, durationMs: durationMs() });
     throw e;
   }
   const error = failure?.(out);
-  await v.guard.settle(checked, error === undefined ? {} : { error });
+  await v.guard.settle(checked, { ...(error === undefined ? {} : { error }), durationMs: durationMs() });
   return out;
 }
 

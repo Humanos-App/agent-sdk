@@ -34,7 +34,7 @@ describe('humanos proxy — the governing proxy in front of a real stdio MCP ser
       expect(refused.isError).toBe(true);
       expect(refused.content[0]!.text).toMatch(/^Blocked by VIA: .*Nothing was sent to Support desk/);
       expect(t.decisions.map((d) => [d.tool, d.decision])).toEqual([['lookup_order', 'allow'], ['issue_refund', 'deny']]);
-      expect(t.outcomes).toEqual([{ decisionEventId: t.decisions[0]!.eventId, outcome: 'completed' }]);
+      expect(t.outcomes).toEqual([{ decisionEventId: t.decisions[0]!.eventId, outcome: 'completed', durationMs: expect.any(Number) }]);
     } finally {
       await proxy.close();
     }

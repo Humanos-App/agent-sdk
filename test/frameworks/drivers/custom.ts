@@ -7,6 +7,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { getDefaultEnvironment, StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { declaredContext, type CallContext } from '../../../src/context.js';
 import { ViaDeniedError } from '../../../src/guard.js';
 import { routeStdio } from '../../../src/mcp/transport.js';
 import type { FrameworkDriver, RunContext } from '../contract.js';
@@ -22,11 +23,12 @@ export const custom: FrameworkDriver = {
 
     // The agent's own tools: declared once, each call through the guard.
     void via.tools.add(ctx.tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema, service: ctx.service })));
-    const run = new Map<string, (input: Record<string, unknown>) => Promise<{ text: string; isError: boolean }>>();
+    const run = new Map<string, (input: Record<string, unknown>, reported?: CallContext) => Promise<{ text: string; isError: boolean }>>();
     for (const t of ctx.tools) {
-      run.set(t.name, async (input) => {
+      run.set(t.name, async (input, context) => {
         try {
-          const out = await via.guard.call(t.name, input, (a) => t.execute(a));
+          // A custom agent knows its model from the reply it holds: it declares it with the call.
+          const out = await via.guard.call(t.name, input, (a) => t.execute(a), context ? { reported: context } : {});
           return { text: JSON.stringify(out.result), isError: false };
         } catch (e) {
           if (e instanceof ViaDeniedError) return { text: `Blocked by Humanos (${e.reason})`, isError: true };
@@ -70,9 +72,13 @@ export const custom: FrameworkDriver = {
         messages.push({ role: 'assistant', content: reply.content });
         if (reply.stop_reason !== 'tool_use') return;
         const uses = reply.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
+        const context = declaredContext(
+          { requested: ctx.llm.model, answered: reply.model },
+          { id: reply.id, inputTokens: reply.usage.input_tokens, outputTokens: reply.usage.output_tokens },
+        );
         const results = await Promise.all(
           uses.map(async (u) => {
-            const r = await run.get(u.name)!(u.input as Record<string, unknown>);
+            const r = await run.get(u.name)!(u.input as Record<string, unknown>, context);
             return { type: 'tool_result' as const, tool_use_id: u.id, content: r.text, is_error: r.isError };
           }),
         );

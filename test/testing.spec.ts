@@ -4,7 +4,7 @@
  * of THIS call over its authority), the policy deciding first, rules evaluated, outcomes recorded.
  */
 import { describe, expect, it } from 'vitest';
-import { ViaGuard, ViaDeniedError, softwareKey, buildDelegatedPoP } from '../src/index.js';
+import { ViaGuard, ViaDeniedError, softwareKey, buildDelegatedPoP, declaredContext, UNREPORTED } from '../src/index.js';
 import { createTestVerifier, evaluateRules, validateCelExpression, TEST_POLICY, type TestVerifierOptions } from '../src/testing.js';
 import type { ChallengeGrant } from '../src/types.js';
 
@@ -27,12 +27,38 @@ const grantOf = (g: ChallengeGrant | { refused: string }): ChallengeGrant => {
 };
 
 describe('createTestVerifier', () => {
+  it("keeps the framework's context beside the decision, outside the proof the verifier checks (#654)", async () => {
+    const { t, guard } = await setup();
+    const context = declaredContext({ answered: 'gpt-5' }, { id: 'resp_1', inputTokens: 900, outputTokens: 40 });
+
+    const out = await guard.call('pay', { amount: 50 }, () => 'paid', { reported: context });
+
+    expect(out).toMatchObject({ decision: 'allow', result: 'paid' });
+    expect(t.decisions[0]).toMatchObject({ decision: 'allow', reported: context });
+  });
+
+  it("reports the tool's own run time with its outcome (#654)", async () => {
+    const { t, guard } = await setup();
+
+    await guard.call('pay', { amount: 50 }, () => new Promise((done) => setTimeout(() => done('paid'), 25)));
+
+    expect(t.outcomes[0]!.durationMs).toBeGreaterThanOrEqual(20);
+  });
+
+  it("sends a call the caller says nothing about as custom, its model not accessed (#654)", async () => {
+    const { t, guard } = await setup();
+
+    await guard.call('pay', { amount: 50 }, () => 'paid');
+
+    expect(t.decisions[0]!.reported).toEqual(UNREPORTED);
+  });
+
   it('allows within the rules, runs the tool, and records the completed outcome against the decision', async () => {
     const { t, guard } = await setup();
     const out = await guard.call('pay', { amount: 50 }, () => 'paid');
     expect(out).toMatchObject({ decision: 'allow', result: 'paid' });
     expect(t.decisions).toEqual([expect.objectContaining({ tool: 'pay', decision: 'allow', mandateId: t.mandate.id })]);
-    expect(t.outcomes).toEqual([{ decisionEventId: t.decisions[0]!.eventId, outcome: 'completed' }]);
+    expect(t.outcomes).toEqual([{ decisionEventId: t.decisions[0]!.eventId, outcome: 'completed', durationMs: expect.any(Number) }]);
   });
 
   it('denies on a failing rule; the tool never runs and no outcome is recorded', async () => {
@@ -133,7 +159,7 @@ describe('createTestVerifier with no agentKey — Humanos holds the key (v0.3 §
     expect(await guard.call('pay', { amount: 50 }, () => 'paid')).toMatchObject({ decision: 'allow', result: 'paid' });
     await expect(guard.call('pay', { amount: 500 }, () => 'paid')).rejects.toMatchObject({ reason: 'rule_failed' });
     expect(t.decisions.map((d) => d.decision)).toEqual(['allow', 'deny']);
-    expect(t.outcomes).toEqual([{ decisionEventId: t.decisions[0]!.eventId, outcome: 'completed' }]);
+    expect(t.outcomes).toEqual([{ decisionEventId: t.decisions[0]!.eventId, outcome: 'completed', durationMs: expect.any(Number) }]);
   });
 
   it('refuses a PoP: the agent holds no key Humanos could check one against', async () => {

@@ -30,7 +30,9 @@ export type { ViaAgentKey, StoredKey, ConfinementEvidence, Assurance, Binding } 
 
 // The PEP — every tool call: the mandate it presents, if any → challenge → PoP → verify → execute/refuse.
 export { ViaGuard, ViaDeniedError } from './guard.js';
-export type { GuardOptions, GuardCallOutcome, GuardCallContext, GuardCheck, CallMandate, MandateSource } from './guard.js';
+export type { GuardOptions, GuardCallOptions, GuardCallOutcome, GuardCallContext, GuardCheck, CallMandate, MandateSource } from './guard.js';
+export { callContext, declaredContext, StepLedger, UNREPORTED } from './context.js';
+export type { CallContext, CallStep, FrameworkName, ModelSource, StepReport } from './context.js';
 
 // The platform transport + the delegation ceremony.
 export { MiniPlatformClient, delegationParams } from './client.js';

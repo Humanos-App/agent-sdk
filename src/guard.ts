@@ -2,6 +2,7 @@ import { actionHash, evaluateRules, jwkThumbprint, policyActionHash, unwrapUserP
 import type { RuleEvaluation, ViaMandateCredential } from './sdk.js';
 import { buildDelegatedPoP, type ViaAgentKey } from './key-provider.js';
 import { outcomeParams, type AgentOutcomeKind } from './events.js';
+import { UNREPORTED, type CallContext } from './context.js';
 import type { CallAuthority, ChallengeGrant, CompiledLike, GuardVerifier, MandateRequestHint, VerifyOutcome } from './types.js';
 
 export type { GuardVerifier, VerifyOutcome } from './types.js';
@@ -60,6 +61,19 @@ export interface GuardCheck {
   decisionId?: string;
   /** The verifier's answer: with an `audience`, an allow carries the call proof (`outcome.callProof`). */
   outcome: VerifyOutcome;
+  /** What the call was sent with (#654): the model that asked for it, the step's tokens, the framework. */
+  reported: CallContext;
+}
+
+/** What `check` and `call` take beside the call: who it goes to, and what the framework reports about it. */
+export interface GuardCallOptions {
+  /** The party the call goes to (v0.3 §16.16): with it, an `allow` carries the call proof. */
+  audience?: string;
+  /**
+   * What the framework reports about the call (#654); none sends it as `custom`, the model `not_accessed`. A promise is
+   * read only when the call is verified, so a framework's local read runs beside the challenge's round trip.
+   */
+  reported?: CallContext | Promise<CallContext>;
 }
 
 /** The mandate one call presents, with its pinned action for the advisory pre-flight. */
@@ -194,7 +208,7 @@ export class ViaGuard {
     tool: string,
     args: Record<string, unknown>,
     impl: ToolFn,
-    opts: { audience?: string } = {},
+    opts: GuardCallOptions = {},
   ): Promise<GuardCallOutcome<T>> {
     const checked = await this.check(tool, args, opts);
     if (!checked.proceed) {
@@ -217,8 +231,9 @@ export class ViaGuard {
    * decision, with nothing run. When `proceed` is true the caller runs the tool and then `settle`s it; when false the
    * tool must not run, and nothing is reported.
    */
-  async check(tool: string, args: Record<string, unknown>, opts: { audience?: string } = {}): Promise<GuardCheck> {
+  async check(tool: string, args: Record<string, unknown>, opts: GuardCallOptions = {}): Promise<GuardCheck> {
     const params = { ...args, tool };
+    const context = Promise.resolve(opts.reported ?? UNREPORTED);
     let presented = await this.mandateFor(tool, params);
 
     // Local pre-flight (advisory only, R5/v0.2-new §5.3.1): saves a round-trip on obvious denials
@@ -231,7 +246,7 @@ export class ViaGuard {
       void preflight; // advisory: a real SDK would log/telemetry this; the decision stays with the verifier.
     }
 
-    let outcome = await this.present(tool, params, presented?.mandate.id, opts.audience);
+    let outcome = await this.present(tool, params, context, presented?.mandate.id, opts.audience);
     // The policy may have changed since the source read it, or a person may just have granted a mandate: the source
     // reads again, and the call is presented once more when that changes the mandate it presents.
     if (outcome.decision === 'deny' && outcome.reason === 'mandate_required' && this.opts.mandates) {
@@ -241,7 +256,7 @@ export class ViaGuard {
       );
       if (again && again.mandate.id !== presented?.mandate.id) {
         presented = again;
-        outcome = await this.present(tool, params, again.mandate.id, opts.audience);
+        outcome = await this.present(tool, params, context, again.mandate.id, opts.audience);
       }
     }
 
@@ -249,7 +264,7 @@ export class ViaGuard {
     // id alone when the platform appends the signed event later (outbox).
     const decisionId = outcome.event?.id ?? outcome.decisionEventId;
     const mandateId = presented?.mandate.id;
-    const decided = { evaluations: outcome.evaluations, outcome, ...(mandateId ? { mandateId } : {}), ...(decisionId ? { decisionId } : {}) };
+    const decided = { evaluations: outcome.evaluations, outcome, reported: await context, ...(mandateId ? { mandateId } : {}), ...(decisionId ? { decisionId } : {}) };
     if (outcome.decision === 'allow') return { decision: 'allow', proceed: true, ...decided };
 
     const request = outcome.reason === 'mandate_required' ? await this.requestFor(tool, outcome.under) : undefined;
@@ -267,13 +282,14 @@ export class ViaGuard {
   }
 
   /**
-   * The second half of `call`: report what became of a call `check` let run, `error` when the tool failed. Takes the
-   * check itself, or its `decisionId` and `mandateId` kept by a hook that runs in another process.
+   * The second half of `call`: report what became of a call `check` let run, `error` when the tool failed and
+   * `durationMs` the tool's own run time. Takes the check itself, or its `decisionId` and `mandateId` kept by a hook
+   * that runs in another process.
    */
-  async settle(checked: Pick<GuardCheck, 'decisionId' | 'mandateId'>, result: { error?: unknown } = {}): Promise<void> {
-    if (result.error === undefined) return this.report(checked.decisionId, checked.mandateId, 'completed');
-    const { error } = result;
-    return this.report(checked.decisionId, checked.mandateId, 'failed', error instanceof Error ? error.message : String(error));
+  async settle(checked: Pick<GuardCheck, 'decisionId' | 'mandateId'>, result: { error?: unknown; durationMs?: number } = {}): Promise<void> {
+    const { error, durationMs } = result;
+    const failure = error === undefined ? undefined : error instanceof Error ? error.message : String(error);
+    return this.report(checked.decisionId, checked.mandateId, failure === undefined ? 'completed' : 'failed', failure, durationMs);
   }
 
   /** What to ask a person for: the controls the refusal named (`under`), else what the source read of the policy. */
@@ -299,21 +315,36 @@ export class ViaGuard {
    */
   private async execute<T>(args: Record<string, unknown>, impl: ToolFn, checked: GuardCheck): Promise<T> {
     const { outcome, mandateId } = checked;
+    const started = performance.now();
+    const ran = () => Math.round(performance.now() - started);
     try {
       const result = (await impl(args, { outcome, ...(mandateId ? { mandateId } : {}) })) as T;
-      await this.settle(checked);
+      await this.settle(checked, { durationMs: ran() });
       return result;
     } catch (e) {
-      await this.settle(checked, { error: e });
+      await this.settle(checked, { error: e, durationMs: ran() });
       throw e;
     }
   }
 
   /** v0.3 §2.1 — the outcome, under the authority the call was presented with: a fresh challenge, a fresh PoP. */
-  private async report(decisionId: string | undefined, mandateId: string | undefined, outcome: AgentOutcomeKind, error?: string): Promise<void> {
+  private async report(
+    decisionId: string | undefined,
+    mandateId: string | undefined,
+    outcome: AgentOutcomeKind,
+    error?: string,
+    durationMs?: number,
+  ): Promise<void> {
     if (!decisionId) return;
     const { verifier, agentDid, agentKey } = this.opts;
-    const reported = { decisionEventId: decisionId, outcome, ...(error ? { error } : {}), now: this.opts.now?.() };
+    // The run time rides beside the report, outside its proof, as the context rides beside a call's params (#654).
+    const reported = {
+      decisionEventId: decisionId,
+      outcome,
+      ...(error ? { error } : {}),
+      ...(durationMs !== undefined ? { durationMs } : {}),
+      now: this.opts.now?.(),
+    };
     // Humanos holds the key: it challenges and signs the report itself.
     if (!agentKey) {
       await verifier.reportOutcome({ agentDid, ...(mandateId ? { mandateId } : {}), ...reported });
@@ -334,16 +365,24 @@ export class ViaGuard {
    * without a mandate (v0.3 §21.4). When Humanos holds the agent's key, the call names only the mandate: Humanos
    * challenges, names the policy and signs for the agent itself.
    */
-  private async present(tool: string, params: Record<string, unknown>, mandateId?: string, audience?: string): Promise<VerifyOutcome> {
+  private async present(
+    tool: string,
+    params: Record<string, unknown>,
+    context: Promise<CallContext>,
+    mandateId?: string,
+    audience?: string,
+  ): Promise<VerifyOutcome> {
     const { verifier, agentDid, agentKey } = this.opts;
-    const presented = { tool, params, ...(audience ? { audience } : {}), now: this.opts.now?.() };
-    if (!agentKey) return verifier.verify({ agentDid, ...(mandateId ? { mandateId } : {}), ...presented });
+    // The context goes beside `params`, never inside: the proof and the rules read the params alone (#654). It is read
+    // last, so a framework's local read of it overlaps the challenge.
+    const presented = async () => ({ tool, params, reported: await context, ...(audience ? { audience } : {}), now: this.opts.now?.() });
+    if (!agentKey) return verifier.verify({ agentDid, ...(mandateId ? { mandateId } : {}), ...(await presented()) });
     const ch = await verifier.challenge({ agentDid, ...(mandateId ? { mandateId } : {}) });
     if ('refused' in ch) return { decision: 'deny', reason: ch.refused, evaluations: [] };
     const authority = this.authority(ch, mandateId);
     if (!authority) return { decision: 'deny', reason: 'mandate_required', evaluations: [] };
     const pop = await this.sign(agentKey, ch, this.hash(authority, tool, params));
-    return verifier.verify({ ...authority, ...presented, pop });
+    return verifier.verify({ ...authority, ...(await presented()), pop });
   }
 
   /** What the PoP binds: the mandate presented or, with none, the policy the challenge named. */

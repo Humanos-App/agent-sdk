@@ -17,6 +17,7 @@ import type { ActionRule, ViaMandateCredential } from './sdk.js';
 import { outcomeParams } from './events.js';
 import type { ViaAgentKey } from './key-provider.js';
 import type { CallAuthority, CompiledLike, GuardVerifier, VerifyOutcome } from './types.js';
+import type { CallContext } from './context.js';
 
 export { evaluateRules, validateCelExpression };
 
@@ -58,12 +59,16 @@ export interface TestDecision {
   eventId?: string;
   /** The mandate the call presented; none when it bound the policy. */
   mandateId?: string;
+  /** What the framework reported about the call (#654). */
+  reported?: CallContext;
 }
 
 export interface TestOutcome {
   decisionEventId: string;
   outcome: 'completed' | 'failed';
   error?: string;
+  /** The tool's own run time the guard reported (#654). */
+  durationMs?: number;
 }
 
 export function createTestVerifier(opts: TestVerifierOptions): {
@@ -111,13 +116,14 @@ export function createTestVerifier(opts: TestVerifierOptions): {
     return set ? { access: set } : { access: opts.policy.default ?? 'allow', unset: true };
   };
 
-  const record = (tool: string, mandateId: string | undefined, o: VerifyOutcome): VerifyOutcome => {
+  const record = (tool: string, mandateId: string | undefined, context: CallContext | undefined, o: VerifyOutcome): VerifyOutcome => {
     decisions.push({
       tool,
       decision: o.decision,
       ...(o.reason ? { reason: o.reason } : {}),
       ...(o.decisionEventId ? { eventId: o.decisionEventId } : {}),
       ...(mandateId ? { mandateId } : {}),
+      ...(context ? { reported: context } : {}),
     });
     return o;
   };
@@ -129,8 +135,8 @@ export function createTestVerifier(opts: TestVerifierOptions): {
       nonces.add(nonce);
       return { nonce, aud: 'did:web:verifier.test', ttl: 60, iat: Math.floor(Date.now() / 1000), ...(opts.policy ? { policy: TEST_POLICY } : {}) };
     },
-    verify: async ({ tool, params, pop, ...authority }) => {
-      const answer = (o: Omit<VerifyOutcome, 'decisionEventId'>) => record(tool, authority.mandateId, { ...o, decisionEventId: eventId() });
+    verify: async ({ tool, params, pop, reported: context, ...authority }) => {
+      const answer = (o: Omit<VerifyOutcome, 'decisionEventId'>) => record(tool, authority.mandateId, context, { ...o, decisionEventId: eventId() });
       if (!(await popOk(pop, authority, tool, params))) return answer({ decision: 'deny', reason: 'pop_invalid', evaluations: [] });
       const { access, unset } = accessOf(tool);
       const byDefault = unset ? { unset } : {};
@@ -146,9 +152,9 @@ export function createTestVerifier(opts: TestVerifierOptions): {
       if (decision === 'deny') return answer({ decision: 'deny', reason: 'rule_failed', evaluations, enforcement: 'rules' });
       return answer({ decision: 'allow', evaluations, enforcement: 'rules' });
     },
-    reportOutcome: async ({ decisionEventId, outcome, error, pop, ...authority }) => {
+    reportOutcome: async ({ decisionEventId, outcome, error, pop, durationMs, ...authority }) => {
       if (!(await popOk(pop, authority, 'report_outcome', outcomeParams(decisionEventId, outcome, error)))) return { rejected: 'pop_invalid' };
-      outcomes.push({ decisionEventId, outcome, ...(error ? { error } : {}) });
+      outcomes.push({ decisionEventId, outcome, ...(error ? { error } : {}), ...(durationMs !== undefined ? { durationMs } : {}) });
       return { recorded: {} };
     },
   };

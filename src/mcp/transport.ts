@@ -20,7 +20,11 @@ import { callProofExtra } from './proxy.js';
 import { audienceOf, refusalText } from './refusal.js';
 import { defaultPlainReason, type JsonRpcMessage } from './server.js';
 import type { ToolRegistry } from './tool-registry.js';
+import { callContext } from '../context.js';
 import type { McpServerSpec, UpstreamServer, UpstreamTool } from './upstream.js';
+
+/** What a call the proxy checks reports: the proxy, and no model (#654). */
+const PROXIED = callContext({ name: 'mcp-proxy' });
 
 /**
  * What every MCP client transport has: AI SDK's `MCPTransport` and the MCP SDK's `Transport` alike. Each library types
@@ -101,7 +105,7 @@ function governTransport<T extends McpTransportLike>(deps: ViaMcpDeps, service: 
   const plainReason = deps.plainReason ?? defaultPlainReason;
   const warn = deps.onWarning ?? ((m: string) => void process.stderr.write(`via: ${m}\n`));
   const listing = new Set<Id>();
-  const calls = new Map<Id, GuardCheck>();
+  const calls = new Map<Id, { checked: GuardCheck; started: number }>();
   let handler: McpTransportLike['onmessage'];
 
   const deliver = (message: unknown, extra?: unknown): void => handler?.call(inner, message, extra);
@@ -112,7 +116,8 @@ function governTransport<T extends McpTransportLike>(deps: ViaMcpDeps, service: 
 
     const name = String(message.params?.name ?? '');
     const args = (message.params?.arguments ?? {}) as Record<string, unknown>;
-    const checked = await deps.guard.check(name, args, audienceOf(options.origin));
+    // A tools/call carries no model: the proxy reports only that it checked the call (#654).
+    const checked = await deps.guard.check(name, args, { ...audienceOf(options.origin), reported: PROXIED });
     if (!checked.proceed) {
       // Answered here, after `send` returns, as the server would have: the framework reads it as the tool's result.
       const result = { content: [{ type: 'text', text: refusalText({ name, service }, checked, plainReason) }], isError: true };
@@ -121,7 +126,7 @@ function governTransport<T extends McpTransportLike>(deps: ViaMcpDeps, service: 
     }
     const meta = callProofExtra(checked.outcome)?.meta;
     const sent = meta ? { ...message, params: { ...message.params, _meta: { ...((message.params?._meta as object) ?? {}), ...meta } } } : message;
-    calls.set(message.id, checked);
+    calls.set(message.id, { checked, started: performance.now() });
     try {
       await inner.send(sent, sendOptions);
     } catch (e) {
@@ -134,12 +139,12 @@ function governTransport<T extends McpTransportLike>(deps: ViaMcpDeps, service: 
   const receive = (message: unknown, extra?: unknown): void => {
     if (!isResponse(message)) return deliver(message, extra);
     if (listing.delete(message.id)) declare(message);
-    const checked = calls.get(message.id);
-    if (!checked) return deliver(message, extra);
+    const call = calls.get(message.id);
+    if (!call) return deliver(message, extra);
     calls.delete(message.id);
     // The outcome is reported before the framework gets the result, as `ViaGuard.call` does.
     void deps.guard
-      .settle(checked, failureOf(message))
+      .settle(call.checked, { ...failureOf(message), durationMs: Math.round(performance.now() - call.started) })
       .catch((e: unknown) => warn(`reporting a call's outcome failed: ${e instanceof Error ? e.message : String(e)}`))
       .finally(() => deliver(message, extra));
   };

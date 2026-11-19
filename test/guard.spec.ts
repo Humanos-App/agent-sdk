@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ViaDeniedError, ViaGuard, type CallMandate, type MandateSource } from '../src/guard.js';
 import { softwareKey } from '../src/key-provider.js';
+import { UNREPORTED } from '../src/context.js';
 import { actionHash, decodePoP, jwkThumbprint, policyActionHash, verifyPoPSignature } from '../src/sdk.js';
 import type { ViaMandateCredential } from '../src/sdk.js';
 import type { GuardVerifier, ReportOutcomeInput, VerifyInput, VerifyOutcome } from '../src/types.js';
@@ -336,6 +337,7 @@ describe('ViaGuard with no agentKey — Humanos holds the key (v0.3 §16.14)', (
       tool: 'book_load',
       params: { load_id: 'L-1', tool: 'book_load' },
       audience: 'https://carrier.example',
+      reported: UNREPORTED,
       now: undefined,
     });
     expect(r.reported[0]).toEqual({
@@ -343,6 +345,7 @@ describe('ViaGuard with no agentKey — Humanos holds the key (v0.3 §16.14)', (
       mandateId: MANDATE.id,
       decisionEventId: 'urn:via:event:decision',
       outcome: 'completed',
+      durationMs: expect.any(Number),
       now: undefined,
     });
   });

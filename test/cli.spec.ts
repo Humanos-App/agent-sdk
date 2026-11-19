@@ -34,7 +34,7 @@ describe('humanos init and restore — a Claude Agent SDK project, its own setti
 
     expect(await initCommand(['--yes'], ctx)).toEqual({ framework: 'claude-agent-sdk', registered: true });
     const written = JSON.parse(read(scene.dir, '.claude/settings.json'));
-    for (const event of ['PreToolUse', 'PostToolUse', 'PostToolUseFailure']) expect(written.hooks[event][0].hooks[0].command).toBe(CLAUDE_HOOK_COMMAND);
+    for (const event of ['SessionStart', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure']) expect(written.hooks[event][0].hooks[0].command).toBe(CLAUDE_HOOK_COMMAND);
     expect(written.permissions).toEqual({ allow: ['Bash'] });
     expect(written.hooks.Stop).toHaveLength(1);
     expect(read(scene.dir, '.gitignore')).toBe('node_modules/\n.humanos/\n');
@@ -84,8 +84,9 @@ describe('humanos init — the other paths', () => {
       expect.arrayContaining([
         'Add to the agent’s code:',
         "  const humanos = await aiSdk();",
-        'Then, in your generateText or streamText call (or your ToolLoopAgent), pass your tools through Humanos:',
+        'Then, in your generateText or streamText call (or your ToolLoopAgent), pass your tools and model through Humanos:',
         "  tools: humanos.guard(tools, 'support-desk'),",
+        '  model: humanos.model(model),',
         expect.stringMatching(/^'support-desk' is the service: the dashboard lists these tools under it/),
       ]),
     );

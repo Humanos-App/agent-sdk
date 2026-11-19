@@ -88,6 +88,21 @@ describe('McpGuardVerifier — the GuardVerifier over the connector', () => {
     ]);
   });
 
+  it("sends the framework's context with verify and the run time with report_outcome, beside what the proof covers (#654)", async () => {
+    const { client, calls } = fakeClient({
+      verify: json({ decision: 'allow', evaluations: [], decisionEventId: 'urn:d' }),
+      report_outcome: json({ recorded: 'urn:o' }),
+    });
+    const context = { v: 1, framework: { name: 'langchain' }, model: { answered: 'gpt-5', source: 'framework' } } as const;
+    const v = new McpGuardVerifier(client);
+    await v.verify({ agentDid: AGENT, mandateId: mandate.id, tool: 't', params: { tool: 't' }, pop: 'p', reported: context });
+    await v.reportOutcome({ agentDid: AGENT, mandateId: mandate.id, decisionEventId: 'urn:d', outcome: 'completed', durationMs: 42, pop: 'p' });
+    expect(calls).toEqual([
+      { name: 'verify', args: { agentDid: AGENT, mandateId: mandate.id, tool: 't', params: { tool: 't' }, pop: 'p', reported: context } },
+      { name: 'report_outcome', args: { agentDid: AGENT, mandateId: mandate.id, decisionEventId: 'urn:d', outcome: 'completed', durationMs: 42, pop: 'p' } },
+    ]);
+  });
+
   it('verify: a DENY is an outcome, not an error', async () => {
     const { client } = fakeClient({ verify: json({ decision: 'deny', reason: 'rule_failed', evaluations: [{ rule: 'cap', result: 'fail' }] }) });
     const out = await new McpGuardVerifier(client).verify({ agentDid: AGENT, mandateId: mandate.id, tool: 't', params: { tool: 't' }, pop: 'p' });

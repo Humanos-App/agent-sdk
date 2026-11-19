@@ -17,9 +17,9 @@ export const openrouterGenerate: FrameworkDriver = {
   name: 'OpenRouter (AI SDK generateText)',
   callProofOverHttp: true,
   async run(ctx) {
-    const { tools, close } = await toolsFor(ctx);
+    const { tools, close, humanos } = await toolsFor(ctx);
     try {
-      await generateText({ model: model(ctx), tools, prompt: ctx.prompt, stopWhen: stepCountIs(5) });
+      await generateText({ model: humanos.model(model(ctx)), tools, prompt: ctx.prompt, stopWhen: stepCountIs(5) });
     } finally {
       await close();
     }
@@ -30,9 +30,9 @@ export const openrouterStream: FrameworkDriver = {
   name: 'OpenRouter (AI SDK streamText)',
   callProofOverHttp: true,
   async run(ctx) {
-    const { tools, close } = await toolsFor(ctx);
+    const { tools, close, humanos } = await toolsFor(ctx);
     try {
-      await streamText({ model: model(ctx), tools, prompt: ctx.prompt, stopWhen: stepCountIs(5), onError: () => {} }).consumeStream();
+      await streamText({ model: humanos.model(model(ctx)), tools, prompt: ctx.prompt, stopWhen: stepCountIs(5), onError: () => {} }).consumeStream();
     } finally {
       await close();
     }

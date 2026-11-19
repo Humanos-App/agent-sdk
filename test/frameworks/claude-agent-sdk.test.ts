@@ -34,6 +34,16 @@ describe('Claude Agent SDK built-in tools, with no code: the settings hook gover
   it('an allowed Bash call runs, and its outcome is reported from the other hook process', async () => {
     const { scene, ran } = await runBash('allow');
     expect(ran).toBe(true);
-    expect(scene.outcomes).toEqual([{ decisionEventId: scene.decisions[0]!.eventId, outcome: 'completed' }]);
+    expect(scene.outcomes).toEqual([{ decisionEventId: scene.decisions[0]!.eventId, outcome: 'completed', durationMs: expect.any(Number) }]);
+  });
+
+  // #654: the transcript already holds the message that asked for the call when PreToolUse runs.
+  it('reports the model that asked for the call, read from the transcript the hook is handed', async () => {
+    const { scene } = await runBash('allow');
+    expect(scene.decisions[0]!.reported).toMatchObject({
+      framework: { name: 'claude-agent-sdk' },
+      model: { answered: expect.any(String), source: 'framework' },
+      step: { id: expect.stringMatching(/^msg_/), inputTokens: expect.any(Number) },
+    });
   });
 });

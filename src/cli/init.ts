@@ -44,9 +44,9 @@ const NOT_YET: Record<string, string> = {
   '@openrouter/sdk': 'OpenRouter SDK',
 };
 
-/** The `PreToolUse` / `PostToolUse` / `PostToolUseFailure` command `init` writes for Claude Agent SDK. */
+/** The `SessionStart` / `PreToolUse` / `PostToolUse` / `PostToolUseFailure` command `init` writes for Claude Agent SDK. */
 export const CLAUDE_HOOK_COMMAND = 'npx --no-install humanos hook claude';
-const CLAUDE_HOOK_EVENTS = ['PreToolUse', 'PostToolUse', 'PostToolUseFailure'] as const;
+const CLAUDE_HOOK_EVENTS = ['SessionStart', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure'] as const;
 
 interface Change {
   /** The file, from the project. */
@@ -146,8 +146,9 @@ function codeToAdd(framework: Exclude<Framework, 'claude-agent-sdk'>, service: s
       'Add to the agent’s code:',
       "  import { aiSdk } from '@humanos-ai/agent-sdk/ai-sdk';",
       '  const humanos = await aiSdk();',
-      'Then, in your generateText or streamText call (or your ToolLoopAgent), pass your tools through Humanos:',
+      'Then, in your generateText or streamText call (or your ToolLoopAgent), pass your tools and model through Humanos:',
       `  tools: humanos.guard(tools, ${s}),`,
+      '  model: humanos.model(model),',
     ],
     langchain: [
       'Add to the agent’s code:',
