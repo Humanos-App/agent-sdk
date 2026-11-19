@@ -104,7 +104,7 @@ export { McpGuardVerifier, McpVerifierError, getMandates, getPolicy, policyManda
 export type { HeldMandate, GuardMandate, AgentPolicy, ToolAccess, PolicyMandates, PolicyMandatesOptions } from './mcp/guard-verifier.js';
 
 // Asking a person for a mandate: a control's limits, the request, and its answer, waited for.
-export { getAction, requestMandate, mandateStatus, waitForMandate, AUTHORIZATION_DEFAULT_MS, WAIT_DEFAULT_MS } from './mcp/mandate-request.js';
+export { getAction, requestMandate, toolLimits, mandateStatus, waitForMandate, AUTHORIZATION_DEFAULT_MS, WAIT_DEFAULT_MS } from './mcp/mandate-request.js';
 export type { ActionView, ActionParam, MandateRequestInput, MandateRequested, MandateStatus, WaitForMandateOptions } from './mcp/mandate-request.js';
 export type { StdioTransport } from './mcp/stdio.js';
 

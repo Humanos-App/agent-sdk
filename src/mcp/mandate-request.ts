@@ -8,6 +8,9 @@
  */
 import type { ViaMcpClient } from './client.js';
 import { McpVerifierError } from './guard-verifier.js';
+import { buildRule, nameOnlyHash, toolDefinitionHash } from '../sdk.js';
+import type { LimitCondition, LimitRule, MandateTool } from '../sdk.js';
+import type { GuardTool } from '../types.js';
 
 /** A limit a person sets on a mandate under a control, as `get_action` describes it. */
 export interface ActionParam {
@@ -63,7 +66,39 @@ export type MandateRequestInput =
       name: string;
       /** In plain words, what the call will do: the whole grant. */
       terms: string;
+    })
+  /**
+   * v0.4 §15.2 — under a policy of limits per tool: the tools the mandate covers, each with the limits asked for
+   * (`toolLimits`), the words the person reads, and how many calls it is good for. `contact` is used only where no
+   * person is signed in with the agent: Humanos sends the request to that person, whoever the agent names (§15.5).
+   */
+  | (Omit<RequestBounds, 'contact' | 'maxExecutions' | 'description'> & {
+      kind: 'limits';
+      contact?: string;
+      /** What the person is asked to allow, in plain words. Required: the limits are read against it. */
+      description: string;
+      /** How many calls it is good for. Required: a person never approves an unlimited number by an omission. */
+      maxExecutions: number;
+      /** The tools it covers, by their key in the policy, each with its limits. */
+      tools: Record<string, MandateTool>;
+      /** Limits on every tool it covers, over the agent and its accreditation. */
+      rules?: LimitRule[];
+      /** The label the person sees. */
+      name?: string;
     });
+
+/**
+ * v0.4 §15.2, §15.4 — one tool's part of a mandate request: its key, the hash of its definition as the agent holds
+ * it, and one rule per limit asked for. In a mandate every limit must hold, so each is a rule of its own: a request
+ * cannot write a limit with a way around it. A tool known by name only (§13.0) takes no limit on an input.
+ *
+ * `toolLimits(tool, [{ left: 'amount', operator: '<=', value: 120 }, { left: 'order', operator: '==', value: '1182' }])`
+ */
+export function toolLimits(tool: GuardTool, limits: LimitCondition[] = []): Record<string, MandateTool> {
+  const hash = tool.definition ? toolDefinitionHash(tool.definition) : nameOnlyHash(tool.key);
+  if (!hash) throw new TypeError(`via: ${JSON.stringify(tool.key)} names no one tool`);
+  return { [tool.key]: { hash, rules: limits.map((limit) => buildRule([limit], tool.definition?.inputSchema)) } };
+}
 
 /** What `request_mandate` answers: the mandate, still pending, and the card to show the person. */
 export interface MandateRequested {
@@ -77,7 +112,7 @@ export interface MandateRequested {
     title: string;
     terms: string;
     termsAuthor: 'issuer' | 'agent';
-    kind: 'guardrail' | 'authorization';
+    kind: 'guardrail' | 'authorization' | 'limits';
     link?: string;
     grantor: string;
     /** When the consent link stops working. */
@@ -90,7 +125,7 @@ export interface MandateRequested {
 /** Where a requested mandate stands. */
 export interface MandateStatus {
   mandateId: string;
-  kind: 'guardrail' | 'authorization';
+  kind: 'guardrail' | 'authorization' | 'limits';
   /** The spec's status (v0.3 §0.10.1). */
   status: string;
   /** `PENDING` until the person decides; then `ACTIVE`, `REJECTED`, or `INACTIVE` for any other ending. */
@@ -131,6 +166,21 @@ export function requestMandate(
   input: MandateRequestInput,
   now: () => Date = () => new Date(),
 ): Promise<MandateRequested> {
+  if (input.kind === 'limits') {
+    const { contact, validUntil, maxAttestationStaleness, description, maxExecutions, tools, rules, name } = input;
+    return call<MandateRequested>(client, 'request_mandate', {
+      kind: 'limits',
+      did,
+      ...(contact ? { grantor: { contact } } : {}),
+      description,
+      maxExecutions,
+      tools,
+      ...(rules?.length ? { rules } : {}),
+      ...(name ? { name } : {}),
+      ...(validUntil ? { validUntil: iso(validUntil) } : {}),
+      ...(maxAttestationStaleness !== undefined ? { maxAttestationStaleness } : {}),
+    });
+  }
   const { contact, validUntil, maxExecutions, maxAttestationStaleness, description } = input;
   const authorization = input.kind === 'authorization';
   const until = validUntil ?? (authorization ? new Date(now().getTime() + AUTHORIZATION_DEFAULT_MS) : undefined);

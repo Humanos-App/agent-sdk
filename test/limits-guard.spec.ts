@@ -129,3 +129,52 @@ describe('ViaGuard under a v0.4 policy (limits per tool)', () => {
     expect(leaked.outcome.detail).toBe('stripe/create_refund may not receive person.email in order');
   });
 });
+
+describe('asking a person for a mandate under a v0.4 policy', () => {
+  // v0.4 §15.2, §15.4: the requester writes the limits, one rule each, with the expression its condition generates.
+  it("builds one tool's part of a request: its key, the hash of its definition, and one rule per limit", async () => {
+    const { toolLimits } = await import('../src/mcp/mandate-request.js');
+    const asked = toolLimits(TOOLS.create_refund!, [
+      { left: 'amount', operator: '<=', value: 120 },
+      { left: 'order', operator: '==', value: '1182' },
+    ]);
+    expect(asked).toEqual({
+      'stripe/create_refund': {
+        hash: toolDefinitionHash(REFUND),
+        rules: [
+          { conditions: [{ left: 'amount', operator: '<=', value: 120 }], expression: '"amount" in params && params.amount <= 120.0' },
+          { conditions: [{ left: 'order', operator: '==', value: '1182' }], expression: '"order" in params && params.order == "1182"' },
+        ],
+      },
+    });
+    // A tool known by name only takes no limit on an input: its hash is its name's.
+    expect(toolLimits(TOOLS.Bash!)).toEqual({ [BASH]: { hash: nameOnlyHash(BASH), rules: [] } });
+  });
+
+  it('sends the tools, the words and the number of calls, and a contact only when one is given', async () => {
+    const { requestMandate, toolLimits } = await import('../src/mcp/mandate-request.js');
+    const sent: { name: string; args: Record<string, unknown> }[] = [];
+    const client = {
+      initialize: async () => ({ serverInfo: { name: 'fake', version: '0' }, protocolVersion: '2025-06-18' }),
+      listTools: async () => [],
+      callTool: async (name: string, args: Record<string, unknown> = {}) => (sent.push({ name, args }), { text: JSON.stringify({ mandateId: 'm1', status: 'PENDING' }), isError: false }),
+    };
+    const tools = toolLimits(TOOLS.create_refund!, [{ left: 'amount', operator: '<=', value: 120 }]);
+    await requestMandate(client as never, AGENT, { kind: 'limits', description: 'Refund order 1182, up to 120 EUR', maxExecutions: 1, tools });
+    await requestMandate(client as never, AGENT, { kind: 'limits', description: 'Refund order 1182', maxExecutions: 1, tools, contact: 'ana@example.com' });
+    expect(sent[0]).toEqual({ name: 'request_mandate', args: { kind: 'limits', did: AGENT, description: 'Refund order 1182, up to 120 EUR', maxExecutions: 1, tools } });
+    expect(sent[1]!.args).toMatchObject({ grantor: { contact: 'ana@example.com' } });
+  });
+
+  // What the guard is refused with is what a request is built from, and the mandate it yields is what a call presents.
+  it('goes from a refusal to a request to a call that runs', async () => {
+    const { toolLimits } = await import('../src/mcp/mandate-request.js');
+    const { t, guard, hold } = await setup();
+    const refused = await guard.check('create_refund', { amount: 100, order: '1182' });
+    expect(refused.request).toEqual({ kind: 'limits', tool: 'stripe/create_refund', grantors: [TEST_GRANTOR] });
+    const tools = toolLimits(TOOLS.create_refund!, [{ left: 'amount', operator: '<=', value: 120 }]);
+    // The person accepts: the test verifier issues what a platform would.
+    hold(t.grant({ description: { text: 'Refund order 1182, up to 120 EUR', lang: 'en', author: 'agent' }, maxExecutions: 1, tools }));
+    expect(await guard.call('create_refund', { amount: 100, order: '1182' }, () => 'refunded')).toMatchObject({ decision: 'allow', result: 'refunded' });
+  });
+});
