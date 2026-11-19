@@ -17,6 +17,10 @@ export type { Jwk, P256KeyPair } from '@humanos-ai/via-sdk';
 export { computeSRI } from '@humanos-ai/via-sdk';
 export { canonicalizeRFC8785 } from '@humanos-ai/via-sdk';
 export { buildPoP, actionHash, policyActionHash, decodePoP, verifyPoPSignature } from '@humanos-ai/via-sdk';
+// v0.4 §15 — a call under a v0.4 policy: the hash of the definition it was made from, the proof that covers it, and
+// the rules a mandate request carries, each with the expression its conditions generate.
+export { limitsActionHash, toolDefinitionHash, nameOnlyHash, buildRule, ruleExpression } from '@humanos-ai/via-sdk';
+export type { ToolDefinition, LimitCondition, LimitRule, LimitEvaluation, MandateLimits, MandateTool, ReviewerPart, CallLayerContext } from '@humanos-ai/via-sdk';
 // §2.1 — the params an outcome report's PoP binds; the verifier rebuilds them with the same function.
 export { outcomeParams } from '@humanos-ai/via-sdk';
 export type { AgentOutcomeKind } from '@humanos-ai/via-sdk';

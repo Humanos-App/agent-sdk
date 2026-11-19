@@ -1,15 +1,15 @@
-import { actionHash, evaluateRules, jwkThumbprint, policyActionHash, unwrapUserParamValues } from './sdk.js';
-import type { RuleEvaluation, ViaMandateCredential } from './sdk.js';
+import { actionHash, evaluateRules, jwkThumbprint, limitsActionHash, nameOnlyHash, policyActionHash, toolDefinitionHash, unwrapUserParamValues } from './sdk.js';
+import type { ViaMandateCredential } from './sdk.js';
 import { buildDelegatedPoP, type ViaAgentKey } from './key-provider.js';
 import { outcomeParams, type AgentOutcomeKind } from './events.js';
-import type { CallAuthority, ChallengeGrant, CompiledLike, GuardVerifier, MandateRequestHint, VerifyOutcome } from './types.js';
+import type { CallAuthority, ChallengeGrant, CompiledLike, Evaluation, GuardTool, GuardVerifier, MandateRequestHint, VerifyOutcome } from './types.js';
 
 export type { GuardVerifier, VerifyOutcome } from './types.js';
 
 export class ViaDeniedError extends Error {
   constructor(
     public readonly reason: string | undefined,
-    public readonly evaluations: RuleEvaluation[],
+    public readonly evaluations: Evaluation[],
     /** v0.3 §21.3 — with `mandate_required`: the actions a mandate must be under, any one of them. */
     public readonly under?: { id: string }[],
     /** The mandate the call presented; none when the policy alone decided it. */
@@ -25,7 +25,7 @@ export class ViaDeniedError extends Error {
 export interface GuardCallOutcome<T = unknown> {
   decision: 'allow' | 'deny';
   reason?: string;
-  evaluations: RuleEvaluation[];
+  evaluations: Evaluation[];
   /** Present when the tool ran (allow, or deny under `observe`). */
   result?: T;
   /** True when a deny was recorded but the tool executed anyway (`observe` mode, R5b). */
@@ -47,7 +47,7 @@ export interface GuardCheck {
   /** True when the tool may run: an allow, or a deny under `observe`. */
   proceed: boolean;
   reason?: string;
-  evaluations: RuleEvaluation[];
+  evaluations: Evaluation[];
   /** On a deny that `observe` lets through. */
   observed?: boolean;
   /** On a `mandate_required` deny: the actions a mandate must be under, any one of them (v0.3 §21.3). */
@@ -79,7 +79,8 @@ export interface MandateSource {
    * preferring one under `under` when the refusal named it.
    */
   mandateFor(
-    call: { tool: string; params: Record<string, unknown> },
+    /** `key`: the tool as a v0.4 policy names it (`server/name`), when the guard was given its tools. */
+    call: { tool: string; params: Record<string, unknown>; key?: string },
     retry?: { refused?: string; under?: { id: string }[] },
   ): CallMandate | undefined | Promise<CallMandate | undefined>;
   /** What a person must grant for the tool when the policy leaves it to a mandate, as the source last read it. */
@@ -115,6 +116,13 @@ export interface GuardOptions {
    * `enforce`: a deny refuses the call. Phase A of the ramp (G4) runs `observe`.
    */
   mode?: 'observe' | 'enforce';
+  /**
+   * v0.4 §15.3 — the agent's tools, by the name a call uses: each one's key in the policy (`server/name`) and its
+   * definition as the agent holds it. Under a v0.4 policy every call names the definition it was made from, so a
+   * tool this does not know is refused `tool_changed`. A tool given with no definition is known by name only, as a
+   * host's hook knows it (§13.0). Not read under a v0.3 policy.
+   */
+  tools?: (tool: string) => GuardTool | undefined | Promise<GuardTool | undefined>;
   now?: () => Date;
 }
 
@@ -219,7 +227,9 @@ export class ViaGuard {
    */
   async check(tool: string, args: Record<string, unknown>, opts: { audience?: string } = {}): Promise<GuardCheck> {
     const params = { ...args, tool };
-    let presented = await this.mandateFor(tool, params);
+    const named = await this.opts.tools?.(tool);
+    const call = { tool, args, ...(named ? { named } : {}) };
+    let presented = await this.mandateFor(tool, params, named?.key);
 
     // Local pre-flight (advisory only, R5/v0.2-new §5.3.1): saves a round-trip on obvious denials
     // in enforce mode; NEVER authoritative and never a substitute for the verifier.
@@ -231,17 +241,17 @@ export class ViaGuard {
       void preflight; // advisory: a real SDK would log/telemetry this; the decision stays with the verifier.
     }
 
-    let outcome = await this.present(tool, params, presented?.mandate.id, opts.audience);
+    let outcome = await this.present(call, presented?.mandate.id, opts.audience);
     // The policy may have changed since the source read it, or a person may just have granted a mandate: the source
     // reads again, and the call is presented once more when that changes the mandate it presents.
     if (outcome.decision === 'deny' && outcome.reason === 'mandate_required' && this.opts.mandates) {
       const again = await this.opts.mandates.mandateFor(
-        { tool, params },
+        { tool, params, ...(named ? { key: named.key } : {}) },
         { ...(presented ? { refused: presented.mandate.id } : {}), ...(outcome.under ? { under: outcome.under } : {}) },
       );
       if (again && again.mandate.id !== presented?.mandate.id) {
         presented = again;
-        outcome = await this.present(tool, params, again.mandate.id, opts.audience);
+        outcome = await this.present(call, again.mandate.id, opts.audience);
       }
     }
 
@@ -252,7 +262,7 @@ export class ViaGuard {
     const decided = { evaluations: outcome.evaluations, outcome, ...(mandateId ? { mandateId } : {}), ...(decisionId ? { decisionId } : {}) };
     if (outcome.decision === 'allow') return { decision: 'allow', proceed: true, ...decided };
 
-    const request = outcome.reason === 'mandate_required' ? await this.requestFor(tool, outcome.under) : undefined;
+    const request = outcome.reason === 'mandate_required' ? await this.requestFor(tool, outcome) : undefined;
     return {
       decision: 'deny',
       reason: outcome.reason,
@@ -276,17 +286,21 @@ export class ViaGuard {
     return this.report(checked.decisionId, checked.mandateId, 'failed', error instanceof Error ? error.message : String(error));
   }
 
-  /** What to ask a person for: the controls the refusal named (`under`), else what the source read of the policy. */
-  private async requestFor(tool: string, under?: { id: string }[]): Promise<MandateRequestHint | undefined> {
-    if (under?.length) return { kind: 'guardrail', actionIds: under.map((u) => u.id) };
+  /**
+   * What to ask a person for: under a v0.4 policy the tool the refusal named and who may grant it; else the controls
+   * it named (`under`), else what the source read of the policy.
+   */
+  private async requestFor(tool: string, refused: Pick<VerifyOutcome, 'under' | 'tool' | 'grantors'>): Promise<MandateRequestHint | undefined> {
+    if (refused.tool && refused.grantors !== undefined) return { kind: 'limits', tool: refused.tool, grantors: refused.grantors };
+    if (refused.under?.length) return { kind: 'guardrail', actionIds: refused.under.map((u) => u.id) };
     return this.opts.mandates?.requestFor?.(tool);
   }
 
   /** The mandate this call presents: the fixed one, the source's choice, or none. */
-  private async mandateFor(tool: string, params: Record<string, unknown>): Promise<CallMandate | undefined> {
+  private async mandateFor(tool: string, params: Record<string, unknown>, key?: string): Promise<CallMandate | undefined> {
     const { mandate, compiled, mandates } = this.opts;
     if (mandate) return { mandate, ...(compiled ? { compiled } : {}) };
-    return mandates?.mandateFor({ tool, params });
+    return mandates?.mandateFor({ tool, params, ...(key ? { key } : {}) });
   }
 
   /**
@@ -333,17 +347,53 @@ export class ViaGuard {
    * or, with none, the policy the challenge names, and verify. A verifier that names no policy authorizes nothing
    * without a mandate (v0.3 §21.4). When Humanos holds the agent's key, the call names only the mandate: Humanos
    * challenges, names the policy and signs for the agent itself.
+   *
+   * The challenge says which version the policy is (v0.4 §15.7), and the call is written for it. Under v0.3 the
+   * params carry the tool's name. Under v0.4 the call names the tool by its key, carries its own inputs alone and the
+   * hash of the definition it was made from, and its proof covers that hash (§15.3).
    */
-  private async present(tool: string, params: Record<string, unknown>, mandateId?: string, audience?: string): Promise<VerifyOutcome> {
+  private async present(call: { tool: string; args: Record<string, unknown>; named?: GuardTool }, mandateId?: string, audience?: string): Promise<VerifyOutcome> {
     const { verifier, agentDid, agentKey } = this.opts;
-    const presented = { tool, params, ...(audience ? { audience } : {}), now: this.opts.now?.() };
+    const sent = { ...(audience ? { audience } : {}), now: this.opts.now?.() };
+    const ch = agentKey ? await verifier.challenge({ agentDid, ...(mandateId ? { mandateId } : {}) }) : undefined;
+    // With a key the challenge says the version; when Humanos holds the key, the verifier is asked, where it can say.
+    const limits = (ch && !('refused' in ch) ? ch.specVersion : agentKey ? undefined : await this.policyVersion()) === '0.4';
+    const tool = limits ? (call.named?.key ?? call.tool) : call.tool;
+    const params = limits ? call.args : { ...call.args, tool: call.tool };
+    // A tool the guard was not given names no definition, and the verifier refuses it as one that changed.
+    const toolHash = !limits ? undefined : call.named ? (call.named.definition ? toolDefinitionHash(call.named.definition) : (nameOnlyHash(call.named.key) ?? '')) : '';
+    const presented = { tool, params, ...(toolHash !== undefined ? { toolHash } : {}), ...sent };
     if (!agentKey) return verifier.verify({ agentDid, ...(mandateId ? { mandateId } : {}), ...presented });
-    const ch = await verifier.challenge({ agentDid, ...(mandateId ? { mandateId } : {}) });
-    if ('refused' in ch) return { decision: 'deny', reason: ch.refused, evaluations: [] };
+    if (!ch || 'refused' in ch) return { decision: 'deny', reason: ch ? ch.refused : 'pop_invalid', evaluations: [] };
     const authority = this.authority(ch, mandateId);
     if (!authority) return { decision: 'deny', reason: 'mandate_required', evaluations: [] };
-    const pop = await this.sign(agentKey, ch, this.hash(authority, tool, params));
+    const hash =
+      toolHash !== undefined
+        ? limitsActionHash(authority.mandateId ? { mandateId: authority.mandateId } : { policy: authority.policy! }, tool, params, toolHash)
+        : this.hash(authority, tool, params);
+    const pop = await this.sign(agentKey, ch, hash);
     return verifier.verify({ ...authority, ...presented, pop });
+  }
+
+  /**
+   * When Humanos holds the agent's key it challenges itself, so the guard has no challenge to read the policy's
+   * version from. It asks the verifier, where the verifier can say, and keeps the answer a minute: a policy changes
+   * version when an organization moves, once. A verifier that cannot say, or fails, is read as v0.3, as before.
+   */
+  private versionKnown?: { at: number; version: string | undefined };
+  private async policyVersion(): Promise<string | undefined> {
+    const { verifier, agentDid } = this.opts;
+    if (!verifier.policyVersion) return undefined;
+    const now = (this.opts.now?.() ?? new Date()).getTime();
+    if (this.versionKnown && now - this.versionKnown.at < 60_000) return this.versionKnown.version;
+    let version: string | undefined;
+    try {
+      version = await verifier.policyVersion({ agentDid });
+    } catch {
+      version = undefined;
+    }
+    this.versionKnown = { at: now, version };
+    return version;
   }
 
   /** What the PoP binds: the mandate presented or, with none, the policy the challenge named. */

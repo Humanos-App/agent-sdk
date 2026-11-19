@@ -4,13 +4,17 @@
  * integrator programs against; any conforming platform (the agent2
  * mini-platform today, the real Humanos endpoints tomorrow) implements them.
  */
-import type { ActionRule, RuleEvaluation, ViaEvent } from './sdk.js';
+import type { ActionRule, CallLayerContext, LimitEvaluation, ReviewerPart, RuleEvaluation, ToolDefinition, ViaEvent } from './sdk.js';
+
+/** One rule's result: v0.3's, named by its rule, or under a v0.4 policy named by its document, tool and position. */
+export type Evaluation = RuleEvaluation | LimitEvaluation;
 
 /** The verifier's answer to one presented tool call: allow or deny. Nobody is asked to confirm a call (v0.3 §17.4). */
 export interface VerifyOutcome {
   decision: 'allow' | 'deny';
   reason?: string;
-  evaluations: RuleEvaluation[];
+  /** Each rule's result. Under a v0.4 policy a rule has no name: its result names its document, tool and position. */
+  evaluations: Evaluation[];
   /** The signed VERIFICATION_* VIAEvent appended to the call's chain. */
   event?: ViaEvent;
   /**
@@ -38,6 +42,21 @@ export interface VerifyOutcome {
    * of them. Ask the person for a mandate under one.
    */
   under?: { id: string }[];
+  /**
+   * v0.4 §15.8 — under a v0.4 policy, with `mandate_required`, `grantor_not_allowed` and `one_call_required`: the tool
+   * as the policy names it, and who may grant a mandate for it. An empty list: nobody may, until an owner names the
+   * tool in the policy.
+   */
+  tool?: string;
+  grantors?: string[] | 'any';
+  /** v0.4 §15.8, §14.5 — with `param_undeclared` and `token_unfilled`: the input, as a path. */
+  input?: string;
+  /** v0.4 — in words, where a code alone would mislead; with `token_unfilled`, the reason the model reads. */
+  detail?: string;
+  /** v0.4 §15.8 — on a decision under a mandate: what the reviewer did. */
+  reviewed?: ReviewerPart;
+  /** v0.4 §14.8 — the call's context as Humanos established it. */
+  context?: CallLayerContext;
 }
 
 /** Aggregate exposure metering config (PRD §5.5) — declared at publish time. */
@@ -73,6 +92,11 @@ export interface ChallengeGrant {
   /** When it was issued, in epoch seconds. */
   iat: number;
   policy?: string;
+  /**
+   * v0.4 §15.7 — the policy's version marker: `"0.4"` for a policy of limits per tool. The guard reads it before it
+   * signs: under one, a call carries the tool's own inputs and the hash of its definition, under its proof. Absent: v0.3.
+   */
+  specVersion?: string;
 }
 
 /**
@@ -94,6 +118,11 @@ export interface VerifyInput extends CallAuthority {
   pop?: string;
   /** v0.3 §16.16 — the party the call goes to, a DID or an `https` origin: an `allow` then carries the call proof. */
   audience?: string;
+  /**
+   * v0.4 §15.3 — under a v0.4 policy: the hash of the definition the call was made from, which the proof covers.
+   * `tool` is then the tool's key (`server/name`) and `params` its own inputs, with no `tool` among them.
+   */
+  toolHash?: string;
   now?: Date;
 }
 
@@ -117,6 +146,12 @@ export interface GuardVerifier {
    */
   challenge(input: { agentDid: string; mandateId?: string }): ChallengeGrant | { refused: string } | Promise<ChallengeGrant | { refused: string }>;
   verify(input: VerifyInput): VerifyOutcome | Promise<VerifyOutcome>;
+  /**
+   * v0.4 §15.7 — the version marker of the policy the agent's calls are decided under: `"0.4"`, or nothing for v0.3.
+   * Asked only when Humanos holds the agent's key, where the guard has no challenge to read it from. A verifier
+   * without it is read as v0.3.
+   */
+  policyVersion?(input: { agentDid: string }): string | undefined | Promise<string | undefined>;
   reportOutcome(input: ReportOutcomeInput): Promise<{ recorded: unknown } | { rejected: string }> | { recorded: unknown } | { rejected: string };
 }
 
@@ -124,7 +159,21 @@ export interface GuardVerifier {
  * What a call refused `mandate_required` needs a person to grant: a guardrail under one of `actionIds` (the control's
  * version URNs, what a mandate request takes as `actionId`), or with no control an authorization for one call.
  */
-export type MandateRequestHint = { kind: 'guardrail'; actionIds: string[] } | { kind: 'authorization'; maxExecutions: 1 };
+export type MandateRequestHint =
+  | { kind: 'guardrail'; actionIds: string[] }
+  | { kind: 'authorization'; maxExecutions: 1 }
+  /** v0.4 §15.8 — under a v0.4 policy: a mandate that lists this tool, from one of these people. */
+  | { kind: 'limits'; tool: string; grantors: string[] | 'any' };
+
+/**
+ * v0.4 §15.3 — a tool as the guard names it under a v0.4 policy: its key in the policy (`server/name`), and its
+ * definition as the agent holds it. With no definition the tool is known by name only (§13.0), as a host's hook
+ * knows it.
+ */
+export interface GuardTool {
+  key: string;
+  definition?: ToolDefinition;
+}
 
 // ── MCP shapes (the connector's tool surface) ────────────────────────────────
 

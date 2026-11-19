@@ -161,3 +161,131 @@ export function createTestVerifier(opts: TestVerifierOptions): {
     outcomes,
   };
 }
+
+// ── v0.4 §15: limits per tool ────────────────────────────────────────────────
+
+import {
+  buildLimitsMandate,
+  generateEd25519Key,
+  parseToolKey,
+  policyDigest,
+  stampMandate,
+  verifyLimitsCall,
+  type BoundKey,
+  type LimitsPolicy,
+  type MandateLimits,
+  type SemanticReviewInput,
+  type SemanticReviewVerdict,
+  type ToolDefinition,
+} from '@humanos-ai/via-sdk';
+
+export type { LimitsPolicy, MandateLimits, ToolDefinition };
+
+export interface LimitsTestVerifierOptions {
+  /** The organization's policy, of v0.4's shape (`specVersion: "0.4"`). */
+  policy: LimitsPolicy;
+  /** Each tool's definition on record, by its key in the policy (`server/name`). */
+  definitions: Record<string, ToolDefinition>;
+  /** The agent's key: every call's proof is checked against it. */
+  agentKey: Pick<ViaAgentKey, 'publicJwk'>;
+  agentDid: string;
+  /** The reviewer over a call under a mandate (v0.4 §15.2). Absent: none is deployed, and calls are decided without it. */
+  review?: (input: SemanticReviewInput) => SemanticReviewVerdict | Promise<SemanticReviewVerdict>;
+  /** `false`: the reviewer does not enforce yet. Default true. */
+  reviewEnforces?: boolean;
+}
+
+/** The person a test grants a mandate as, when it names none. */
+export const TEST_GRANTOR = 'did:web:humanos.test:user:grantor';
+
+/**
+ * An in-process verifier for an agent under a v0.4 policy: limits per tool (v0.4 §15). Unlike `createTestVerifier` it
+ * runs the protocol's own decision (`verifyLimitsCall`): the proof over the tool's key, its inputs and the hash of its
+ * definition; the policy's rules; a mandate with its own rules, signed and loaded as a platform would; the reviewer.
+ * So what an agent is refused here, with which code, is what a conforming platform refuses.
+ *
+ * `grant` issues a mandate as a person would have accepted it, and returns it for the guard's `mandates` source.
+ */
+export function createLimitsTestVerifier(opts: LimitsTestVerifierOptions): {
+  verifier: GuardVerifier;
+  grant: (limits: MandateLimits, grantor?: string) => ViaMandateCredential;
+  decisions: TestDecision[];
+  outcomes: TestOutcome[];
+} {
+  const VERIFIER = 'did:web:verifier.test';
+  const stamp = generateEd25519Key();
+  const signer = { privateKey: stamp.privateKey, verificationMethod: 'did:web:humanos.test#key-1' };
+  const bound: BoundKey = { did: opts.agentDid, cnf: { jwk: opts.agentKey.publicJwk }, assurance: 'device', binding: 'self', verifiedAt: Date.now() };
+  const version = { content: opts.policy, policyDigest: policyDigest(opts.policy as never) };
+  // A tool the policy knows by name only (v0.4 §13.0) has its name for a definition, and nothing else.
+  const definition = (tool: string) => opts.definitions[tool] ?? (opts.policy.tools[tool]?.nameOnly ? { name: parseToolKey(tool)?.name ?? tool } : null);
+  const mandates = new Map<string, ViaMandateCredential>();
+  const nonces = new Set<string>();
+  const decisions: TestDecision[] = [];
+  const outcomes: TestOutcome[] = [];
+
+  const verifier: GuardVerifier = {
+    challenge: () => {
+      const nonce = randomUUID();
+      nonces.add(nonce);
+      return { nonce, aud: VERIFIER, ttl: 60, iat: Math.floor(Date.now() / 1000), policy: opts.policy.$id, specVersion: '0.4' };
+    },
+    policyVersion: () => '0.4',
+    verify: async ({ agentDid, tool, params, pop, toolHash, mandateId, policy }) => {
+      if (!pop) throw new Error(NO_POP);
+      const result = await verifyLimitsCall(
+        { agentDid, pop, tool, params, toolHash: toolHash as string, ...(mandateId ? { mandateId } : { policy }) },
+        {
+          verifier: { did: VERIFIER },
+          resolvePublicKey: () => stamp.publicKey,
+          candidates: [bound],
+          policy: version,
+          validateNonce: (nonce) => (nonces.delete(nonce) ? 'ok' : 'nonce_invalid'),
+          toolDefinition: definition,
+          loadMandate: (id) => {
+            const mandate = mandates.get(id);
+            return mandate ? { mandate, record: { status: 'ACTIVE' }, candidates: [bound] } : null;
+          },
+          ...(opts.review ? { review: opts.review } : {}),
+          ...(opts.reviewEnforces !== undefined ? { reviewEnforces: opts.reviewEnforces } : {}),
+        },
+      );
+      const decisionEventId = `urn:uuid:${randomUUID()}`;
+      decisions.push({ tool, decision: result.decision, ...(result.reason ? { reason: result.reason } : {}), eventId: decisionEventId, ...(result.credentialId ? { mandateId: result.credentialId } : {}) });
+      const { decision, reason, evaluations, policyDigest: digest, unset, grantors, input, detail, reviewed, context } = result;
+      return {
+        decision,
+        evaluations,
+        decisionEventId,
+        policyDigest: digest,
+        ...(reason ? { reason } : {}),
+        ...(unset ? { unset } : {}),
+        ...(result.tool ? { tool: result.tool } : {}),
+        ...(grantors !== undefined ? { grantors } : {}),
+        ...(input ? { input } : {}),
+        ...(detail ? { detail } : {}),
+        ...(reviewed ? { reviewed } : {}),
+        ...(context ? { context } : {}),
+      };
+    },
+    reportOutcome: async ({ decisionEventId, outcome, error }) => {
+      if (!decisions.some((d) => d.eventId === decisionEventId)) return { rejected: 'decision_not_found' };
+      outcomes.push({ decisionEventId, outcome, ...(error ? { error } : {}) });
+      return { recorded: {} };
+    },
+  };
+
+  const grant = (limits: MandateLimits, grantor: string = TEST_GRANTOR): ViaMandateCredential => {
+    const mandate = stampMandate(
+      buildLimitsMandate(
+        { subjectOrg: VERIFIER, grantor, authorizedDIDs: [VERIFIER], authorizedAgents: [bound], limits, reviewed: 'unavailable', validFrom: new Date(Date.now() - 1000).toISOString() },
+        { definition },
+      ),
+      signer,
+    );
+    mandates.set(mandate.id, mandate);
+    return mandate;
+  };
+
+  return { verifier, grant, decisions, outcomes };
+}
