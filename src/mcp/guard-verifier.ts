@@ -137,12 +137,12 @@ export async function getMandates(client: ViaMcpClient, did: string): Promise<Gu
 
 /**
  * v0.4 §15.4 — a limit of a v0.4 policy as the agent it applies to reads it (`get_policy`): its conditions, without any
- * that names agents and without its CEL. `never`: only an exception for other agents could pass it.
+ * that names agents and without its CEL. A rule the agent can never pass is not listed: the tool's `access` then says
+ * what its calls get.
  */
 export interface AgentLimitRule {
   conditions: { left: string; operator: string; value?: unknown; right?: string; measure?: string }[];
   otherwise?: 'mandate';
-  never?: true;
 }
 
 /** A tool's access as the organization's policy sets it for the agent (v0.3 §21.1); `not_set`: its default decides. */
