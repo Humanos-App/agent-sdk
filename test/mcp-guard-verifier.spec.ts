@@ -243,3 +243,52 @@ describe('policyMandates — a mandate only for a tool the policy leaves to one 
     expect(coveringMandate('wire', [], [preferredOnly, covers], ['urn:b:v1'])?.mandate.id).toBe('covers');
   });
 });
+
+describe('the connector under a v0.4 policy (limits per tool)', () => {
+  const KEY = 'stripe/create_refund';
+  const v04 = (id: string, tools: string[]): GuardMandate =>
+    ({ mandate: { id, specVersion: '0.4', credentialSubject: { mandate: { tools: Object.fromEntries(tools.map((t) => [t, { hash: 'sha256-x', rules: [] }])) } } } as unknown as ViaMandateCredential, action: null, compiled: { actionVersion: { rules: [] } } });
+
+  // v0.4 §15.3: the call names the definition it was made from, and the wire carries it.
+  it('verify: sends the hash of the definition, an empty one included, and none under v0.3', async () => {
+    const { client, calls } = fakeClient({ verify: json({ decision: 'allow', evaluations: [] }) });
+    const v = new McpGuardVerifier(client);
+    await v.verify({ agentDid: AGENT, policy: 'urn:via:policy:p', tool: KEY, params: { amount: 5 }, pop: 'p', toolHash: 'sha256-abc' });
+    await v.verify({ agentDid: AGENT, policy: 'urn:via:policy:p', tool: KEY, params: {}, pop: 'p', toolHash: '' });
+    await v.verify({ agentDid: AGENT, policy: 'urn:via:policy:p', tool: 'create_refund', params: { tool: 'create_refund' }, pop: 'p' });
+    expect(calls.map((c) => c.args.toolHash)).toEqual(['sha256-abc', '', undefined]);
+    expect(calls[2]!.args).not.toHaveProperty('toolHash');
+  });
+
+  it('verify: hands back what a v0.4 refusal names — the tool, who may grant it, the input, the words', async () => {
+    const answer = { decision: 'deny', reason: 'mandate_required', evaluations: [{ in: 'urn:via:policy:p#2', tool: KEY, rule: 0, result: 'pass' }], tool: KEY, grantors: ['did:web:humanos.tech:user:ana'], policyDigest: 'sha256-d' };
+    const { client } = fakeClient({ verify: json(answer) });
+    expect(await new McpGuardVerifier(client).verify({ agentDid: AGENT, policy: 'urn:via:policy:p', tool: KEY, params: {}, pop: 'p', toolHash: 'sha256-abc' })).toEqual(answer);
+  });
+
+  // v0.4 §15.7: when Humanos holds the agent's key the guard has no challenge to read the version from.
+  it("policyVersion: reads the policy's version marker from get_policy", async () => {
+    const policy = { agent: AGENT, specVersion: '0.4', policy: { id: 'urn:via:policy:p', version: 2, default: 'deny' }, tools: [] };
+    const { client, calls } = fakeClient({ get_policy: json(policy) });
+    expect(await new McpGuardVerifier(client).policyVersion({ agentDid: AGENT })).toBe('0.4');
+    expect(calls).toEqual([{ name: 'get_policy', args: { agentDid: AGENT } }]);
+    const { client: v03 } = fakeClient({ get_policy: json({ ...policy, specVersion: undefined }) });
+    expect(await new McpGuardVerifier(v03).policyVersion({ agentDid: AGENT })).toBeUndefined();
+  });
+
+  // v0.4 §15.2: a v0.4 mandate lists its tools by their key, and covers those alone.
+  it('a v0.4 mandate covers the tools it lists by key, and nothing else', () => {
+    const held = [v04('m-other', ['stripe/list_refunds']), v04('m-refund', [KEY])];
+    expect(coveringMandate('create_refund', [], held, [], KEY)?.mandate.id).toBe('m-refund');
+    expect(coveringMandate('create_refund', [], held, [], 'stripe/delete_customer')).toBeUndefined();
+    expect(coveringMandate('create_refund', [], held)).toBeUndefined(); // with no key, a v0.4 mandate covers nothing
+  });
+
+  it('policyMandates: presents a held v0.4 mandate that lists the tool at once, with no refusal first', async () => {
+    const policy: AgentPolicy = { agent: AGENT, specVersion: '0.4', policy: { id: 'urn:via:policy:p', version: 2, default: 'deny' }, tools: [] };
+    const { client } = fakeClient({ get_policy: json(policy), get_mandate: json([{ mandate: v04('m-refund', [KEY]).mandate, action: null }]) });
+    const source = policyMandates(client, AGENT);
+    expect((await source.mandateFor({ tool: 'create_refund', params: { amount: 5 }, key: KEY }))?.mandate.id).toBe('m-refund');
+    expect(await source.mandateFor({ tool: 'list_refunds', params: {}, key: 'stripe/list_refunds' })).toBeUndefined();
+  });
+});

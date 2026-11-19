@@ -77,9 +77,20 @@ export class McpGuardVerifier implements GuardVerifier {
       params: input.params,
       ...(input.pop ? { pop: input.pop } : {}),
       ...(input.audience ? { audience: input.audience } : {}),
+      // v0.4 §15.3 — under a v0.4 policy: the hash of the definition the call was made from. Sent even when empty,
+      // so a call that names no definition is refused by the verifier, not by an argument's absence.
+      ...(input.toolHash !== undefined ? { toolHash: input.toolHash } : {}),
     });
     if (r.isError) throw new McpVerifierError('verify', r.text);
     return parse<VerifyOutcome>('verify', r.text);
+  }
+
+  /**
+   * v0.4 §15.7 — the version marker of the policy the agent's calls are decided under, from `get_policy`: asked by the
+   * guard only when Humanos holds the agent's key, where it has no challenge to read it from.
+   */
+  async policyVersion(input: { agentDid: string }): Promise<string | undefined> {
+    return (await getPolicy(this.client, input.agentDid)).specVersion;
   }
 
   async reportOutcome(input: ReportOutcomeInput): Promise<{ recorded: unknown } | { rejected: string }> {
@@ -130,6 +141,8 @@ export type ToolAccess = 'allow' | 'rules' | 'mandate' | 'deny' | 'not_set';
 /** `get_policy`'s answer: the organization's policy as the agent's own calls meet it, for the tools it declared. */
 export interface AgentPolicy {
   agent: string;
+  /** v0.4 §15.7 — `"0.4"` when the organization's policy is one of limits per tool; absent for v0.3. */
+  specVersion?: string;
   /** A refusal every call meets whatever the tool (`actor_suspended`, …); absent when the agent may act. */
   standing?: string;
   /** v0.3 §21.1 — `default`: what a tool no entry sets gets. */
@@ -162,7 +175,12 @@ export async function getPolicy(client: ViaMcpClient, agentDid: string): Promise
  * plain authorization, 0 not at all. A mandate whose `allowed_tools`, or whose action's `tools`, leaves the tool out
  * never covers it: the person already said no, or the action would refuse it `tool_not_covered`.
  */
-export function mandateCoverage(h: GuardMandate, tool: string, params: string[]): number {
+export function mandateCoverage(h: GuardMandate, tool: string, params: string[], key?: string): number {
+  // v0.4 §15.2 — a mandate marked 0.4 lists its tools by their key, and covers those alone.
+  if ((h.mandate as { specVersion?: string }).specVersion === '0.4') {
+    const listed = h.mandate.credentialSubject.mandate.tools ?? {};
+    return key !== undefined && Object.prototype.hasOwnProperty.call(listed, key) ? 3 : 0;
+  }
   const up = unwrapUserParamValues(h.mandate.credentialSubject.mandate.userParams as never);
   if (Array.isArray(up.allowed_tools)) return (up.allowed_tools as unknown[]).includes(tool) ? 3 : 0;
   if (!h.action) return 1;
@@ -177,11 +195,11 @@ export function mandateCoverage(h: GuardMandate, tool: string, params: string[])
  * The held mandate that best covers a tool (`mandateCoverage`), one pinning a `preferred` action version first: the
  * controls the policy names for the tool.
  */
-export function coveringMandate(tool: string, params: string[], held: GuardMandate[], preferred: string[] = []): GuardMandate | undefined {
+export function coveringMandate(tool: string, params: string[], held: GuardMandate[], preferred: string[] = [], key?: string): GuardMandate | undefined {
   let best: GuardMandate | undefined;
   let bestRank = 0;
   for (const h of held) {
-    const covers = mandateCoverage(h, tool, params);
+    const covers = mandateCoverage(h, tool, params, key);
     const rank = covers && h.action && preferred.includes(h.action.urn) ? covers + 3 : covers;
     if (rank > bestRank) {
       best = h;
@@ -196,7 +214,7 @@ export interface PolicyMandatesOptions {
    * Which held mandate a call presents, for a tool the policy leaves to a person's mandate. `preferred`: the action
    * versions the policy names for it. Default: `coveringMandate` over the call's parameters.
    */
-  pick?: (call: { tool: string; params: Record<string, unknown> }, held: GuardMandate[], preferred: string[]) => GuardMandate | undefined;
+  pick?: (call: { tool: string; params: Record<string, unknown>; key?: string }, held: GuardMandate[], preferred: string[]) => GuardMandate | undefined;
 }
 
 /** `policyMandates`' source, with what it last read. */
@@ -216,7 +234,7 @@ export interface PolicyMandates extends MandateSource {
  * never declared gets a covering mandate too.
  */
 export function policyMandates(client: ViaMcpClient, agentDid: string, opts: PolicyMandatesOptions = {}): PolicyMandates {
-  const pick = opts.pick ?? ((call, held, preferred) => coveringMandate(call.tool, Object.keys(call.params).filter((k) => k !== 'tool'), held, preferred));
+  const pick = opts.pick ?? ((call, held, preferred) => coveringMandate(call.tool, Object.keys(call.params).filter((k) => k !== 'tool'), held, preferred, call.key));
   let state: Promise<{ policy: AgentPolicy; held: GuardMandate[] }> | undefined;
   const read = (): Promise<{ policy: AgentPolicy; held: GuardMandate[] }> => {
     const reading = Promise.all([getPolicy(client, agentDid), getMandates(client, agentDid)]).then(([policy, held]) => ({ policy, held }));
@@ -238,7 +256,10 @@ export function policyMandates(client: ViaMcpClient, agentDid: string, opts: Pol
       const { policy, held } = await (retry || !state ? read() : state);
       const entries = policy.tools.filter((t) => t.tool === call.tool);
       const delegated = entries.find((t) => t.access === 'mandate');
-      if (!delegated && !retry) return undefined;
+      // Under a v0.4 policy a held mandate that lists the tool is presented at once: one presented for a tool the
+      // policy settles itself is never loaded (v0.4 §15.4), and waiting for the refusal would cost a round trip.
+      const listed = policy.specVersion === '0.4' && call.key !== undefined && held.some((h) => mandateCoverage(h, call.tool, [], call.key) > 0);
+      if (!delegated && !retry && !listed) return undefined;
       const preferred = [...(retry?.under ?? []).map((u) => u.id), ...(delegated?.mandateControls ?? []).map((c) => c.id)];
       const candidates = retry?.refused ? held.filter((h) => h.mandate.id !== retry.refused) : held;
       const h = pick(call, candidates, preferred);
