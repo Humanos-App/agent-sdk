@@ -27,7 +27,9 @@ describe('guardTool', () => {
     // Declared with nothing but its name is still a definition; with no declaration it is known by name only.
     expect(guardTool('Stripe', 'ping', { name: 'ping', service: 'Stripe' })).toEqual({ key: 'stripe/ping', definition: { name: 'ping' } });
     expect(guardTool('Claude Agent SDK', 'Bash')).toEqual({ key: 'claude-agent-sdk/Bash' });
-    expect(guardTool('', 'x')).toBeUndefined();
+    // v0.4 §15.3 (decided 2026-11-19): a tool under no service is keyed under `own`; a name no key can hold has none.
+    expect(guardTool('', 'x')).toEqual({ key: 'own/x' });
+    expect(guardTool('Stripe', 'a/b')).toBeUndefined();
   });
 });
 

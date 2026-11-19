@@ -124,8 +124,8 @@ function warningsFor(d: ServiceDeclaration): string[] {
 /**
  * v0.4 §15.3 — a tool as the guard names it under a v0.4 policy: its key from the service it is declared under and
  * its own name, and its definition exactly as it was declared, so the hash the call carries is the hash of what
- * Humanos has on record. With no declaration the tool is known by name only, as a hook knows it. Nothing when the
- * service and the name make no key.
+ * Humanos has on record. With no declaration the tool is known by name only, as a hook knows it. A tool under no
+ * service is keyed under `own`. Nothing when the name is one no key can hold.
  */
 export function guardTool(service: string, name: string, declared?: DeclaredTool): GuardTool | undefined {
   const key = toolKey(service, name);

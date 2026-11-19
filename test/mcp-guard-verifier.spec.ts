@@ -291,4 +291,26 @@ describe('the connector under a v0.4 policy (limits per tool)', () => {
     expect((await source.mandateFor({ tool: 'create_refund', params: { amount: 5 }, key: KEY }))?.mandate.id).toBe('m-refund');
     expect(await source.mandateFor({ tool: 'list_refunds', params: {}, key: 'stripe/list_refunds' })).toBeUndefined();
   });
+
+  // v0.4 (decided 2026-11-19): get_policy answers an agent its own tools by key, with the limits on it.
+  it("policyMandates: under a v0.4 policy reads a tool by its key, so a tool of the same name on another service is not mistaken for it", async () => {
+    const policy: AgentPolicy = {
+      agent: AGENT,
+      specVersion: '0.4',
+      policy: { id: 'urn:via:policy:p', version: 2, default: 'mandate' },
+      rules: [],
+      tools: [
+        { tool: 'create_refund', service: 'Stripe', key: KEY, access: 'mandate', hash: 'sha256-x', rules: [{ conditions: [{ left: 'amount', operator: '<=', value: 100 }] }], oneCall: true },
+        { tool: 'create_refund', service: 'Adyen', key: 'adyen/create_refund', access: 'allow', hash: 'sha256-y', rules: [] },
+      ],
+    };
+    const held = v04('m-refund', [KEY]);
+    const { client } = fakeClient({ get_policy: json(policy), get_mandate: json([{ mandate: held.mandate, action: null }]) });
+    // A picker that would hand over any mandate it is asked for: only the policy's reading decides whether it is asked.
+    const source = policyMandates(client, AGENT, { pick: (_call, candidates) => candidates[0] });
+    // Stripe's is left to a person: a held mandate is looked for. Adyen's is the policy's own to decide: none is presented.
+    expect((await source.mandateFor({ tool: 'create_refund', params: {}, key: KEY }))?.mandate.id).toBe('m-refund');
+    expect(await source.mandateFor({ tool: 'create_refund', params: {}, key: 'adyen/create_refund' })).toBeUndefined();
+  });
 });
+

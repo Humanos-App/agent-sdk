@@ -135,6 +135,16 @@ export async function getMandates(client: ViaMcpClient, did: string): Promise<Gu
   }));
 }
 
+/**
+ * v0.4 §15.4 — a limit of a v0.4 policy as the agent it applies to reads it (`get_policy`): its conditions, without any
+ * that names agents and without its CEL. `never`: only an exception for other agents could pass it.
+ */
+export interface AgentLimitRule {
+  conditions: { left: string; operator: string; value?: unknown; right?: string; measure?: string }[];
+  otherwise?: 'mandate';
+  never?: true;
+}
+
 /** A tool's access as the organization's policy sets it for the agent (v0.3 §21.1); `not_set`: its default decides. */
 export type ToolAccess = 'allow' | 'rules' | 'mandate' | 'deny' | 'not_set';
 
@@ -145,14 +155,30 @@ export interface AgentPolicy {
   specVersion?: string;
   /** A refusal every call meets whatever the tool (`actor_suspended`, …); absent when the agent may act. */
   standing?: string;
-  /** v0.3 §21.1 — `default`: what a tool no entry sets gets. */
-  policy: { id: string; version: number; default: 'allow' | 'deny' } | null;
+  /** v0.3 §21.1 — `default`: what a tool no entry sets gets; under a v0.4 policy `mandate` or `deny`, never `allow`. */
+  policy: { id: string; version: number; default: 'allow' | 'deny' | 'mandate' } | null;
+  /** v0.4 — the limits on every call of this agent, whatever the tool. */
+  rules?: AgentLimitRule[];
   tools: {
     tool: string;
     service?: string;
     access: ToolAccess;
-    /** What the access means for the agent, in one sentence. */
-    meaning: string;
+    /** What the access means for the agent, in one sentence. v0.3 only. */
+    meaning?: string;
+    /** v0.4 §15.3 — the tool's key (`server/name`, `own/name` for a tool declared under no service). */
+    key?: string;
+    /** v0.4 §15.3 — the hash of the definition a member reviewed: what a call's `toolHash` must be. */
+    hash?: string;
+    version?: number;
+    nameOnly?: true;
+    /** v0.4 — the limits on this agent's calls of the tool. */
+    rules?: AgentLimitRule[];
+    /** v0.4 §15.6 — a mandate covers it only for one call. */
+    oneCall?: true;
+    /** v0.4 §15.2 — no call under a mandate without the reviewer's agreement. */
+    reviewer?: 'required';
+    /** v0.4 §14.3 — per parameter, the kinds of personal data that may be filled into it. */
+    fill?: Record<string, string | string[]>;
     /** `rules`: every control the call must pass, its rules in words and its limits. */
     controls?: { id: string; name: string; rules: string[]; limits: { name: string; value: unknown; description?: string }[] }[];
     /** `mandate`: the mandate controls made for the tool, narrowed to the one the policy names when it names one. */
@@ -254,7 +280,8 @@ export function policyMandates(client: ViaMcpClient, agentDid: string, opts: Pol
     },
     async mandateFor(call, retry) {
       const { policy, held } = await (retry || !state ? read() : state);
-      const entries = policy.tools.filter((t) => t.tool === call.tool);
+      // Under a v0.4 policy a tool is its key: two services may each have a tool of one name.
+      const entries = policy.tools.filter((t) => (t.key !== undefined && call.key !== undefined ? t.key === call.key : t.tool === call.tool));
       const delegated = entries.find((t) => t.access === 'mandate');
       // Under a v0.4 policy a held mandate that lists the tool is presented at once: one presented for a tool the
       // policy settles itself is never loaded (v0.4 §15.4), and waiting for the refusal would cost a round trip.
