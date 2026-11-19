@@ -1,4 +1,4 @@
-import { generateText, jsonSchema, simulateReadableStream, streamText, tool, type ToolSet } from 'ai';
+import { generateText, jsonSchema, simulateReadableStream, streamText, tool, type LanguageModel, type ToolSet } from 'ai';
 import { MockLanguageModelV4 } from 'ai/test';
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
@@ -126,6 +126,24 @@ describe("aiSdk — each call reports the model that asked for it (#654)", () =>
     await generateText({ model: mockModel(['call_1']), prompt: 'Find my order', tools: humanos.guard({ lookup_order: lookup() }, 'Orders') });
 
     expect(scene.decisions[0]!.reported).toEqual({ v: 1, framework: { name: 'ai-sdk', version: expect.any(String) }, model: { source: 'not_accessed' } });
+    await scene.close();
+  });
+
+  it('keeps a v2 model as it is under AI SDK 6, which would wrap it without adapting it', async () => {
+    // AI SDK 6's wrapLanguageModel: whatever it wraps comes back labelled v3.
+    vi.resetModules();
+    vi.doMock('ai', async (actual) => ({ ...(await actual<typeof import('ai')>()), wrapLanguageModel: () => ({ specificationVersion: 'v3' }) }));
+    const { aiSdk: aiSdk6 } = await import('../src/adapters/ai-sdk.js');
+    const scene = await agentScene({});
+    const humanos = await aiSdk6(scene.via);
+    const v2 = { specificationVersion: 'v2', provider: 'openai.chat', modelId: 'gpt-5' } as unknown as LanguageModel;
+    const v3 = { specificationVersion: 'v3', provider: 'openai.chat', modelId: 'gpt-5' } as unknown as LanguageModel;
+
+    expect(humanos.model(v2)).toBe(v2);
+    expect(humanos.model(v3)).not.toBe(v3);
+
+    vi.doUnmock('ai');
+    vi.resetModules();
     await scene.close();
   });
 });

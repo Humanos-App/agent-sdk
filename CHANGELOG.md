@@ -6,7 +6,7 @@
   that response's id and tokens, and the framework's name and version, all read locally; the outcome carries the
   tool's run time (`durationMs`). Humanos keeps it beside the decision and never decides on it.
   - AI SDK, OpenRouter, Cloudflare Agents: wrap the model, `humanos.model(model)`. A model left unwrapped reports
-    `not_accessed`.
+    `not_accessed`, as does an AI SDK 5 provider's model under AI SDK 6, which `model` keeps as it is.
   - Claude Agent SDK: the answering model and its tokens, read from the session's transcript. The requested model only
     where Claude's `SessionStart` hook carries it, which `init` now also writes (run `npx humanos init` again to add
     it); Agent SDK runs (0.3.317) do not send it, and hooks in code never get `SessionStart`.

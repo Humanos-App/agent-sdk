@@ -3,7 +3,7 @@
  * answered, the response's id and its tokens, and files them under every tool call the response asks for. Read from
  * the response already in memory, never the network.
  */
-import type { LanguageModelMiddleware } from 'ai';
+import type { wrapLanguageModel } from 'ai';
 import type { StepLedger, StepReport } from '../../context.js';
 
 /** One response of the wrapped model, as each call it asked for finds it; `done` once its tokens are in. */
@@ -12,15 +12,22 @@ export interface ModelStep extends StepReport {
   done: Promise<void>;
 }
 
-type Wrapped = NonNullable<LanguageModelMiddleware['wrapStream']>;
+// Read from `wrapLanguageModel` itself: AI SDK 5, 6 and 7 each type the model and the middleware differently.
+type WrapOptions = Parameters<typeof wrapLanguageModel>[0];
+/** A model the installed AI SDK can wrap. */
+export type WrappableModel = WrapOptions['model'];
+type Middleware = Exclude<WrapOptions['middleware'], readonly unknown[]>;
+type Wrapped = NonNullable<Middleware['wrapStream']>;
 type StreamPart = Awaited<ReturnType<Wrapped>>['stream'] extends ReadableStream<infer P> ? P : never;
 type Seen = { type: string; toolCallId?: string; usage?: unknown; id?: string; modelId?: string };
 type ModelInfo = { provider?: string; modelId?: string };
 type ResponseInfo = { id?: string; modelId?: string };
 
 /** The middleware that files each response's model and tokens under the tool calls it asks for. */
-export function reportingMiddleware(steps: StepLedger<ModelStep>): LanguageModelMiddleware {
+export function reportingMiddleware(steps: StepLedger<ModelStep>): Middleware {
   return {
+    // AI SDK 6 requires the field, 7 accepts it and 5 has none: spread, so 5 does not reject it as unknown.
+    ...{ specificationVersion: 'v3' as const },
     wrapGenerate: async ({ doGenerate, model }) => {
       const result = await doGenerate();
       const step = _stepOf(model, result.response, result.usage, Promise.resolve());

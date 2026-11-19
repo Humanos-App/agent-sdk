@@ -18,7 +18,7 @@ import { callContext, installedVersion, StepLedger, type CallContext, type Frame
 import type { DeclaredTool } from '../mcp/declare.js';
 import type { Via, ViaOptions } from '../via.js';
 import { checkCall, refusalError, runAndSettle, viaFrom } from './shared.js';
-import { reportingMiddleware, type ModelStep } from './utils/ai-sdk-steps.js';
+import { reportingMiddleware, type ModelStep, type WrappableModel } from './utils/ai-sdk-steps.js';
 
 export interface AiSdkHumanos {
   via: Via;
@@ -89,10 +89,18 @@ export async function aiSdk(from?: Via | ViaOptions): Promise<AiSdkHumanos> {
     return guarded as T;
   };
 
-  const model = (m: LanguageModel): LanguageModel =>
-    typeof m === 'string' ? m : wrapLanguageModel({ model: m, middleware: reportingMiddleware(steps) });
+  const model = (m: LanguageModel): LanguageModel => {
+    if (typeof m === 'string') return m;
+    const wrapped = wrapLanguageModel({ model: m as WrappableModel, middleware: reportingMiddleware(steps) });
+    // AI SDK 6 wraps a v2 model without adapting it, under a v3 label it does not meet: that model stays as it is.
+    return _spec(wrapped) === 'v3' && _spec(m) === 'v2' ? m : wrapped;
+  };
 
   return { via: v, guard, model, describe };
+}
+
+function _spec(model: { specificationVersion: string }): string {
+  return model.specificationVersion;
 }
 
 /** The framework a call ran in: a Cloudflare Worker, OpenRouter as the provider, or AI SDK itself. */

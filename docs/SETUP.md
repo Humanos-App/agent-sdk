@@ -91,7 +91,7 @@ await generateText({ model: humanos.model(model), tools: humanos.guard(tools, 'S
 
 `guard` gives your `ToolSet` back with each `execute` checked first. `model` lets each call report which model asked
 for it and that response's tokens; with the model unwrapped, a call reports its model as not accessed. AI SDK 5 and
-later.
+later; under AI SDK 6, an AI SDK 5 provider's model is kept as it is and reports not accessed too.
 
 MCP servers through `@ai-sdk/mcp`: guard their tools the same way, `humanos.guard(await client.tools(), 'Linear')`. To
 have each call to a remote server carry Humanos's call proof, wrap the connection instead:
