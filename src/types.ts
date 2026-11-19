@@ -13,6 +13,13 @@ export type Evaluation = RuleEvaluation | LimitEvaluation;
 export interface VerifyOutcome {
   decision: 'allow' | 'deny';
   reason?: string;
+  /**
+   * v0.4 §15.7.1 — with `spec_version_mismatch`: the protocol version the agent is under, which the call was not made
+   * for. The guard makes the call again that way, once.
+   */
+  expected?: string;
+  /** v0.4 §15.3 — `false` when the call was decided against the definition on record, the host proving none. */
+  toolProven?: false;
   /** Each rule's result. Under a v0.4 policy a rule has no name: its result names its document, tool and position. */
   evaluations: Evaluation[];
   /** The signed VERIFICATION_* VIAEvent appended to the call's chain. */

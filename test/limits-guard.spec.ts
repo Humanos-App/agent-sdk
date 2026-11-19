@@ -2,11 +2,11 @@
  * v0.4 §15 — the guard under a policy of limits per tool: a call names its tool by its key, carries its own inputs
  * and the hash of its definition under its proof, and is decided by the protocol's own rules.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ViaDeniedError, ViaGuard, softwareKey } from '../src/index.js';
 import { buildRule, nameOnlyHash, toolDefinitionHash, type ViaMandateCredential } from '../src/sdk.js';
 import { TEST_GRANTOR, createLimitsTestVerifier, type LimitsPolicy, type ToolDefinition } from '../src/testing.js';
-import type { GuardTool } from '../src/types.js';
+import type { GuardTool, GuardVerifier } from '../src/types.js';
 
 const AGENT = 'did:web:humanos.tech:agent:support';
 const REFUND: ToolDefinition = {
@@ -178,3 +178,95 @@ describe('asking a person for a mandate under a v0.4 policy', () => {
     expect(await guard.call('create_refund', { amount: 100, order: '1182' }, () => 'refunded')).toMatchObject({ decision: 'allow', result: 'refunded' });
   });
 });
+
+// v0.4 §15.7.1 — the organization moves an agent between protocol versions; the guard learns of it from a refusal.
+describe('ViaGuard when the organization moved the agent to another protocol version', () => {
+  /** The test verifier, whose first `first` challenges still say v0.3 and which refuses a call made that way. */
+  async function moved(first: number) {
+    const key = await softwareKey();
+    const t = createLimitsTestVerifier({ policy: policy(), definitions: DEFS, agentKey: key, agentDid: AGENT });
+    const seen: { tool: string; toolHash?: string }[] = [];
+    let challenges = 0;
+    const verifier: GuardVerifier = {
+      ...t.verifier,
+      challenge: async (input) => {
+        const ch = await t.verifier.challenge(input);
+        if ('refused' in ch || ++challenges > first) return ch;
+        const { specVersion: _stale, ...asBefore } = ch;
+        return asBefore;
+      },
+      verify: async (input) => {
+        seen.push({ tool: input.tool, ...(input.toolHash !== undefined ? { toolHash: input.toolHash } : {}) });
+        if (input.toolHash === undefined) return { decision: 'deny', reason: 'spec_version_mismatch', expected: '0.4', evaluations: [] };
+        return t.verifier.verify(input);
+      },
+    };
+    const guard = new ViaGuard({ agentKey: key, agentDid: AGENT, verifier, tools: (tool) => TOOLS[tool] });
+    return { guard, seen };
+  }
+
+  it('makes the call again the way the refusal names, once, and it runs', async () => {
+    const { guard, seen } = await moved(1);
+
+    const out = await guard.call('list_refunds', { limit: 5 }, () => 'three refunds');
+
+    expect(out).toMatchObject({ decision: 'allow', result: 'three refunds' });
+    expect(seen).toEqual([{ tool: 'list_refunds' }, { tool: 'stripe/list_refunds', toolHash: toolDefinitionHash(LIST) }]);
+  });
+
+  // @invariant
+  it('never asks a third time: a verifier that refuses both ways gets the refusal back', async () => {
+    const key = await softwareKey();
+    const verify = vi.fn(async () => ({ decision: 'deny' as const, reason: 'spec_version_mismatch', expected: '0.4', evaluations: [] }));
+    const t = createLimitsTestVerifier({ policy: policy(), definitions: DEFS, agentKey: key, agentDid: AGENT });
+    const guard = new ViaGuard({ agentKey: key, agentDid: AGENT, verifier: { ...t.verifier, verify }, tools: (tool) => TOOLS[tool] });
+
+    await expect(guard.call('list_refunds', { limit: 5 }, () => 'never')).rejects.toMatchObject({ reason: 'spec_version_mismatch' });
+
+    expect(verify).toHaveBeenCalledTimes(2);
+  });
+
+  it('replaces the version it remembered when Humanos holds the key, and asks again the right way', async () => {
+    const policyVersion = vi.fn(async () => undefined as string | undefined);
+    const sent: Record<string, unknown>[] = [];
+    const verifier: GuardVerifier = {
+      challenge: () => ({ refused: 'unused' }),
+      policyVersion,
+      verify: async (input) => {
+        sent.push({ tool: input.tool, params: input.params, toolHash: input.toolHash });
+        return input.toolHash === undefined
+          ? { decision: 'deny', reason: 'spec_version_mismatch', expected: '0.4', evaluations: [] }
+          : { decision: 'allow', evaluations: [], decisionEventId: 'urn:via:event:1' };
+      },
+      reportOutcome: async () => ({ recorded: true }),
+    };
+    const guard = new ViaGuard({ agentDid: AGENT, verifier, tools: (tool) => TOOLS[tool] });
+
+    // The first call remembers v0.3; the organization then moves the agent, and the next call is refused once.
+    expect(await guard.call('list_refunds', { limit: 5 }, () => 'ok')).toMatchObject({ decision: 'allow' });
+
+    expect(sent).toEqual([
+      { tool: 'list_refunds', params: { limit: 5, tool: 'list_refunds' }, toolHash: undefined },
+      { tool: 'stripe/list_refunds', params: { limit: 5 }, toolHash: toolDefinitionHash(LIST) },
+    ]);
+    // What it remembered is now what the refusal named: the next call is made that way at once.
+    await guard.call('list_refunds', { limit: 5 }, () => 'ok');
+    expect(sent).toHaveLength(3);
+    expect(sent[2]).toMatchObject({ tool: 'stripe/list_refunds', toolHash: toolDefinitionHash(LIST) });
+    expect(policyVersion).toHaveBeenCalledTimes(1);
+  });
+
+  it('makes the call the v0.3 way again once the agent is moved back', async () => {
+    const verify = vi.fn(async (input: { toolHash?: string }) =>
+      input.toolHash !== undefined
+        ? { decision: 'deny' as const, reason: 'spec_version_mismatch', expected: '0.3', evaluations: [] }
+        : { decision: 'allow' as const, evaluations: [], decisionEventId: 'urn:via:event:2' },
+    );
+    const verifier: GuardVerifier = { challenge: () => ({ refused: 'unused' }), policyVersion: async () => '0.4', verify, reportOutcome: async () => ({ recorded: true }) };
+    const guard = new ViaGuard({ agentDid: AGENT, verifier, tools: (tool) => TOOLS[tool] });
+
+    expect(await guard.call('list_refunds', { limit: 5 }, () => 'ok')).toMatchObject({ decision: 'allow' });
+    expect(verify.mock.calls.map(([input]) => input.toolHash)).toEqual([toolDefinitionHash(LIST), undefined]);
+  });
+});
+

@@ -237,6 +237,8 @@ export function createLimitsTestVerifier(opts: LimitsTestVerifierOptions): {
         { agentDid, pop, tool, params, toolHash: toolHash as string, ...(mandateId ? { mandateId } : { policy }) },
         {
           verifier: { did: VERIFIER },
+          // The test agent is under v0.4 (§15.7.1): this verifier holds a policy of v0.4 alone.
+          agentVersion: '0.4',
           resolvePublicKey: () => stamp.publicKey,
           candidates: [bound],
           policy: version,

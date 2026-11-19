@@ -143,4 +143,14 @@ describe('the VIA MCP client — identifies itself', () => {
     const pkg = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'package.json'), 'utf8')) as { version: string };
     expect(SDK_VERSION).toBe(pkg.version);
   });
+
+  // v0.4 §15.7.1 — stated for a member to read before moving the agent; the organization sets the version.
+  it('states at the handshake the protocol versions it speaks', async () => {
+    const { impl, seen } = stubFetch({ result: { serverInfo: { name: 'via', version: '1' }, protocolVersion: '2025-06-18' } });
+    const client = createViaMcpClient({ url: URL, apiKey: API_KEY, signatureSecret: SECRET, fetchImpl: impl });
+
+    await client.initialize();
+
+    expect(JSON.parse(seen[0]!.body).params.capabilities).toEqual({ experimental: { via: { specVersions: ['0.3', '0.4'] } } });
+  });
 });

@@ -357,11 +357,24 @@ export class ViaGuard {
    * hash of the definition it was made from, and its proof covers that hash (§15.3).
    */
   private async present(call: { tool: string; args: Record<string, unknown>; named?: GuardTool }, mandateId?: string, audience?: string): Promise<VerifyOutcome> {
+    const outcome = await this.presentOnce(call, mandateId, audience);
+    // v0.4 §15.7.1 — the organization moved the agent since the version was read: the refusal names the version it is
+    // under now. What the guard remembered is replaced by it and the call is made again that way, once: a second
+    // refusal is the answer, so a verifier that keeps refusing is never asked in a loop.
+    const expected = outcome.decision === 'deny' && outcome.reason === 'spec_version_mismatch' ? outcome.expected : undefined;
+    if (expected !== '0.3' && expected !== '0.4') return outcome;
+    this.versionKnown = { at: (this.opts.now?.() ?? new Date()).getTime(), version: expected === '0.4' ? '0.4' : undefined };
+    return this.presentOnce(call, mandateId, audience, expected);
+  }
+
+  /** One challenge and one `verify`. `under` is the version a refusal named: the call is written for it, whatever was remembered. */
+  private async presentOnce(call: { tool: string; args: Record<string, unknown>; named?: GuardTool }, mandateId?: string, audience?: string, under?: '0.3' | '0.4'): Promise<VerifyOutcome> {
     const { verifier, agentDid, agentKey } = this.opts;
     const sent = { ...(audience ? { audience } : {}), now: this.opts.now?.() };
     const ch = agentKey ? await verifier.challenge({ agentDid, ...(mandateId ? { mandateId } : {}) }) : undefined;
     // With a key the challenge says the version; when Humanos holds the key, the verifier is asked, where it can say.
-    const limits = (ch && !('refused' in ch) ? ch.specVersion : agentKey ? undefined : await this.policyVersion()) === '0.4';
+    const stated = under ?? (ch && !('refused' in ch) ? (ch.specVersion ?? '0.3') : agentKey ? undefined : ((await this.policyVersion()) ?? '0.3'));
+    const limits = stated === '0.4';
     const tool = limits ? (call.named?.key ?? call.tool) : call.tool;
     const params = limits ? call.args : { ...call.args, tool: call.tool };
     // A tool the guard was not given names no definition, and the verifier refuses it as one that changed.

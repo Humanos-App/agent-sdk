@@ -22,6 +22,12 @@ import type { McpTool } from '../types.js';
 
 import { SDK_VERSION } from '../version.js';
 
+/**
+ * The VIA protocol versions this SDK makes calls under, stated to Humanos at the MCP handshake
+ * (`capabilities.experimental.via.specVersions`). Stated only: the organization sets the version an agent is under.
+ */
+export const SPEC_VERSIONS = ['0.3', '0.4'] as const;
+
 /** Sent as `clientInfo.version`: package.json's, written at build (scripts/write-version.mjs). */
 export { SDK_VERSION };
 
@@ -127,7 +133,8 @@ export function createViaMcpClient(options: ViaMcpClientOptions): ViaMcpClient {
     async initialize() {
       return (await rpc('initialize', {
         protocolVersion,
-        capabilities: {},
+        // v0.4 §15.7.1 — the protocol versions this SDK speaks, for a member to read before moving the agent.
+        capabilities: { experimental: { via: { specVersions: [...SPEC_VERSIONS] } } },
         clientInfo: { name: 'via-agent-sdk', version: SDK_VERSION },
       })) as { serverInfo: { name: string; version: string }; protocolVersion: string };
     },
