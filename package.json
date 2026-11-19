@@ -54,7 +54,7 @@
     "prebuild": "node scripts/write-version.mjs",
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "prepare": "npm run build",
-    "prepublishOnly": "npm run check-types && npm test",
+    "prepublishOnly": "node scripts/check-release-deps.mjs && npm run check-types && npm test",
     "precheck-types": "node scripts/write-version.mjs",
     "check-types": "tsc -p tsconfig.json --noEmit",
     "check-types:frameworks": "tsc -p test/frameworks/tsconfig.json --noEmit",
@@ -67,7 +67,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@humanos-ai/via-sdk": "0.8.1"
+    "@humanos-ai/via-sdk": "file:../.local-packages/humanos-ai-via-sdk-1.0.0-v04.0.tgz"
   },
   "peerDependencies": {
     "@langchain/core": "^1.0.1",
