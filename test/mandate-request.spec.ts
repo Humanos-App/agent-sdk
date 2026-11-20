@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ViaMcpClient, ViaToolResult } from '../src/mcp/client.js';
 import { McpVerifierError } from '../src/mcp/guard-verifier.js';
+import { buildRule, toolDefinitionHash } from '../src/sdk.js';
 import {
   AUTHORIZATION_DEFAULT_MS,
   WAIT_DEFAULT_MS,
   getAction,
   mandateStatus,
   requestMandate,
+  toolLimits,
   waitForMandate,
   type MandateRequested,
   type MandateStatus,
@@ -71,6 +73,57 @@ describe('getAction, requestMandate, mandateStatus: the connector calls, typed',
       maxExecutions: 1,
     });
     expect(calls[1]!.args).toMatchObject({ maxExecutions: 5, validUntil: '2026-10-29T00:00:00.000Z' });
+  });
+
+  // v0.4 §15.2 — the arguments the platform's `request_mandate` takes for kind `limits`: its own spec
+  // (apps/mcp `mcp.controller.spec.ts`, "as the agent SDK sends it") feeds it this same shape.
+  it('requests a mandate of limits per tool: each tool by key with its hash and one rule per limit, the words and the number of calls', async () => {
+    const refund = { name: 'create_refund', description: 'Refund a charge.', inputSchema: { type: 'object', properties: { amount: { type: 'number' } } } };
+    const { client, calls } = connector({ request_mandate: () => json({ requestId: 'r1', mandateId: MANDATE, status: 'PENDING' }) });
+
+    await requestMandate(client, AGENT, {
+      kind: 'limits',
+      contact: 'ana@acme.test',
+      description: 'Refund order 1182 to the customer, up to 120 EUR',
+      maxExecutions: 1,
+      tools: toolLimits({ key: 'stripe/create_refund', definition: refund }, [{ left: 'amount', operator: '<=', value: 120 }]),
+      rules: [buildRule([{ left: 'agent.binding', operator: '==', value: 'attested' }])],
+      name: 'Refund 1182',
+      validUntil: new Date('2026-12-01T00:00:00.000Z'),
+      maxAttestationStaleness: 3600,
+    });
+
+    expect(calls).toEqual([
+      {
+        name: 'request_mandate',
+        args: {
+          kind: 'limits',
+          did: AGENT,
+          grantor: { contact: 'ana@acme.test' },
+          description: 'Refund order 1182 to the customer, up to 120 EUR',
+          maxExecutions: 1,
+          tools: {
+            'stripe/create_refund': {
+              hash: toolDefinitionHash(refund),
+              rules: [{ conditions: [{ left: 'amount', operator: '<=', value: 120 }], expression: '"amount" in params && params.amount <= 120.0' }],
+            },
+          },
+          rules: [{ conditions: [{ left: 'agent.binding', operator: '==', value: 'attested' }], expression: '"binding" in agent && agent.binding == "attested"' }],
+          name: 'Refund 1182',
+          validUntil: '2026-12-01T00:00:00.000Z',
+          maxAttestationStaleness: 3600,
+        },
+      },
+    ]);
+  });
+
+  it('names no person where one is signed in with the agent: the platform asks them', async () => {
+    const { client, calls } = connector({ request_mandate: () => json({ requestId: 'r1', mandateId: MANDATE, status: 'PENDING' }) });
+
+    await requestMandate(client, AGENT, { kind: 'limits', description: 'Refund order 1182', maxExecutions: 1, tools: toolLimits({ key: 'stripe/create_refund' }) });
+
+    expect(calls[0]!.args).not.toHaveProperty('grantor');
+    expect(calls[0]!.args).toMatchObject({ kind: 'limits', tools: { 'stripe/create_refund': { rules: [] } } });
   });
 
   it('asks where a mandate stands, and throws the connector refusal as McpVerifierError', async () => {
