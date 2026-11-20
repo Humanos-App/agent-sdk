@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ViaMcpClient } from '../src/mcp/client.js';
-import { DECLARE_TOOLS_MAX, declareTools, type DeclaredTool } from '../src/mcp/declare.js';
+import { DECLARE_TOOLS_MAX, declareTools, guardTool, type DeclaredTool } from '../src/mcp/declare.js';
 
 const DID = 'did:web:humanos.tech:agent:a';
 
@@ -44,6 +44,26 @@ describe('declareTools', () => {
   });
 
   // @invariant
+  // The platform keys a tool with no service `own/{name}`; `services: ['']` scopes the call to those tools.
+  it('declares a tool under no service with no service on it, in a call scoped to the tools under none', async () => {
+    const p = platform();
+
+    await declareTools(p.client, DID, [tool('ping', ''), tool('search')]);
+
+    expect(p.calls).toEqual([
+      { did: DID, tools: [{ name: 'ping', inputSchema: { type: 'object', properties: {} } }], services: [''] },
+      { did: DID, tools: [{ name: 'search', service: 'Slack', inputSchema: { type: 'object', properties: {} } }], services: ['Slack'] },
+    ]);
+    expect(guardTool('', 'ping')).toEqual({ key: 'own/ping' });
+  });
+
+  // Code that calls the guard itself, with no framework adapter, names a tool with it under a v0.4 policy.
+  it('is offered with `guardTool` from the package root', async () => {
+    const root = await import('../src/index.js');
+
+    expect(root.guardTool).toBe(guardTool);
+  });
+
   it('never sends what the platform keeps nothing of', async () => {
     const p = platform();
     const withExtras = { ...tool('post'), icons: [{ src: 'data:image/png;base64,AAAA' }], _meta: { 'x/y': 1 } } as DeclaredTool;

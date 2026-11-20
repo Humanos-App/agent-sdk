@@ -29,7 +29,10 @@ export interface DeclaredTool {
   inputSchema?: Record<string, unknown>;
   outputSchema?: Record<string, unknown>;
   annotations?: UpstreamTool['annotations'];
-  /** The service it belongs to, as the organization will see it grouped: "Slack", "Gmail". */
+  /**
+   * The service it belongs to, as the organization will see it grouped: "Slack", "Gmail". `''` for a tool that comes
+   * from no service (the agent's own): it is declared with none, and a v0.4 policy names it `own/{name}`.
+   */
   service: string;
   /** The name the agent calls it by, when that is not `name` (the proxy prefixes a name two servers share). */
   calledAs?: string;
@@ -75,9 +78,11 @@ export async function declareTools(humanos: ViaMcpClient, did: string, tools: De
   for (const [service, all] of byService) {
     const sent = all.slice(0, DECLARE_TOOLS_MAX);
     if (all.length > sent.length) warn(`${service} has ${all.length} tools; the first ${DECLARE_TOOLS_MAX} are declared, the rest are not`);
-    // Naming the service scopes the replacement to it, and lets a service with no tools left say so.
+    // Naming the service scopes the replacement to it, and lets a service with no tools left say so. `''` names the
+    // tools under no service: left out, the platform would read the call as the agent's whole surface and mark every
+    // other service's tools no longer declared.
     const r = await humanos.callTool('declare_tools', { did, tools: sent.map(wireTool), services: [service] });
-    if (r.isError) throw new Error(`declare_tools refused for ${service}: ${r.text}`);
+    if (r.isError) throw new Error(`declare_tools refused for ${service || 'the tools under no service'}: ${r.text}`);
     const d = resultOf(service, r.text, all.length - sent.length);
     for (const message of warningsFor(d)) warn(message);
     declarations.push(d);
@@ -88,7 +93,8 @@ export async function declareTools(humanos: ViaMcpClient, did: string, tools: De
 /** A tool on the wire: its own fields as given, and only the ones it has. `register` sends tools the same way. */
 export function wireTool(t: DeclaredTool): Record<string, unknown> {
   const { name, title, description, inputSchema, outputSchema, annotations, service, calledAs, server } = t;
-  return Object.fromEntries(Object.entries({ name, title, description, inputSchema, outputSchema, annotations, service, calledAs, server }).filter(([, v]) => v !== undefined));
+  // A tool under no service is sent with none: an empty name is not one.
+  return Object.fromEntries(Object.entries({ name, title, description, inputSchema, outputSchema, annotations, service: service || undefined, calledAs, server }).filter(([, v]) => v !== undefined));
 }
 
 /** The platform's answer, read leniently: a count it does not give is 0. */

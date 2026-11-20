@@ -54,7 +54,9 @@ export type { Upstream, UpstreamSpec, UpstreamServer, UpstreamTool, UpstreamResu
 
 // Declaring tools — any agent's, not only the proxy's: each tool as its server describes it, one
 // call per service.
-export { declareTools, DECLARE_TOOLS_MAX } from './mcp/declare.js';
+// `guardTool`: a tool as the guard names it under a v0.4 policy (its key and its declared definition), for code that
+// calls the guard itself rather than through a framework adapter.
+export { declareTools, guardTool, DECLARE_TOOLS_MAX } from './mcp/declare.js';
 export type { DeclaredTool, DeclareToolsOptions, ServiceDeclaration } from './mcp/declare.js';
 // Every tool the adapters of one process see, declared as one list per service.
 export { ToolRegistry } from './mcp/tool-registry.js';
@@ -120,6 +122,7 @@ export type {
   // v0.3 §21.4 — who a call is for, and the mandate or policy its PoP binds.
   CallAuthority,
   MandateRequestHint,
+  GuardTool,
   McpTool,
   McpToolsList,
   ExtractedDraft,
