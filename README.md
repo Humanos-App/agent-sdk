@@ -19,8 +19,7 @@ For complete, runnable agents built on it, see
 | **`via`** | the agent's Humanos from its environment: the connector, the key (`HUMANOS_AGENT_KEY` or `.humanos/agent-key.json`), the DID, the guard and the tool registry, one per process |
 | **`ViaGuard`** | the gate around every tool call: the mandate it presents, if any → challenge → proof of possession → verify → run or refuse → report the outcome. `check` and `settle` split it for a framework that runs the tool itself |
 | **`createViaMcpClient`** | the Humanos connector, authenticated with an API key and its signing secret: the organization's, or an agent key issued for one agent |
-| **`McpGuardVerifier`**, **`policyMandates`** | the connector as the guard's verifier, and the guard's mandate source, which reads only the policy (`getPolicy`) and presents no mandate: the policy decides each call alone |
-| **`requestMandate`**, **`waitForMandate`** | ask a person for a mandate, under a control `getAction` describes or as a one-call authorization, and wait for their answer (`mandateStatus`); `policyMandates` does not present it ([Mandates](#mandates)) |
+| **`McpGuardVerifier`**, **`policyMandates`**, **`getPolicy`** | the connector as the guard's verifier; the guard's mandate source, which presents no mandate, as the policy decides each call alone; and the policy as it applies to the agent's tools |
 | **`startViaMcpProxy`** | a governing proxy in front of MCP servers you did not write; `refresh()` declares their new tools |
 | **`@humanos-ai/agent-sdk/mcp`**, **`via().mcp`** | the connection wrapper: an MCP client transport with every `tools/list` declared and every `tools/call` checked, the proxy inside the agent's process; `routeStdio` puts a stdio server entry behind the proxy, which `humanos proxy` runs |
 | **`registerAgent`** | register the agent's key with the organization, and optionally its tools; Humanos grades how the key is held and answers the agent's DID. With `humanosHoldsKey`, Humanos mints the key and holds it |
@@ -116,18 +115,21 @@ The organization's policy decides each call alone (v0.3 §21.3): a tool it allow
 `policy_denied`, and one under a control's rules runs within them and is refused over them. A tool it sets nothing for
 gets its default, allowed or not. `agentDid` names the agent on every call.
 
-The SDK reads no mandates. `policyMandates` reads `get_policy` once, keeps it, and presents no mandate: every call
-binds the policy. It no longer calls `get_mandate`, which Humanos is removing; an agent on 0.4.3 or earlier still
+The SDK reads no mandates and asks for none. `policyMandates` presents no mandate and reads nothing for a call: every
+call binds the policy. It no longer calls `get_mandate`, which Humanos is removing; an agent on 0.4.3 or earlier still
 calls it, and needs this release before Humanos removes it. Nobody is asked to confirm a call: one a policy puts
 behind a step-up is refused `stepup_required`.
 
 ### Mandates
 
-Humanos's Agents product has no mandates for now: Delegate, the access that left a tool to a person's mandate, is no
-longer offered. If Humanos still refuses a call `mandate_required` (a policy that leaves the tool to a mandate), the
-guard reads the policy again and presents no mandate: the call stays refused, and `ViaDeniedError.request` says what
-the policy asked for. Give the tool another access in the policy. `requestMandate`, `waitForMandate`, `mandateStatus`
-and `getAction` are still in the SDK, but a mandate they obtain is not presented by `policyMandates`.
+Humanos's Agents product has no mandates: Delegate, the access that left a tool to a person's mandate, is no longer
+offered, and a policy that still sets it (or a `mandate` default) refuses the tool as Deny does: `policy_denied`, and
+`access: 'deny'` in `get_policy`. The SDK has no mandate-request API: `requestMandate`, `waitForMandate`,
+`mandateStatus` and `getAction` are removed, as Humanos removes the tools they called.
+
+An older platform may still refuse such a call `mandate_required`. The guard refuses it as it refuses a policy deny:
+presented once, the model told the policy does not allow it and not to retry, and nothing to ask a person for.
+`getPolicy` reads its `mandate` access as `deny`. Give the tool another access in the policy.
 
 ## Govern MCP servers you did not write
 
@@ -182,8 +184,9 @@ const guard = new ViaGuard({ mandate: t.mandate, compiled: t.compiled, agentKey,
 await guard.call('pay', { amount: 500 }, pay); // throws ViaDeniedError: rule_failed
 ```
 
-Give it a `policy` (`{ tools: { pay: 'mandate', search: 'allow' }, default: 'deny' }`) and it decides first, as the
-connector does: the mandate decides only the tools the policy leaves to one.
+Give it a `policy` (`{ tools: { pay: 'mandate', search: 'allow' }, default: 'deny' }`) and it decides first: `allow`
+and `deny` as the connector does, and `mandate`, an access Humanos no longer offers, leaves the tool to the test
+mandate.
 
 ## Develop
 

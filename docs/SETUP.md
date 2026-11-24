@@ -198,8 +198,9 @@ In the dashboard, open **Agents**, then **Policy**, and choose an access for eac
 | **Restrict** | runs within the rules of a control you add (for example, a discount under 10%), and is refused over them |
 | **Deny** | never runs |
 
-The policy decides each call alone: the SDK reads no mandates, and Delegate, which left a tool to a person's mandate,
-is no longer offered. The policy is the agent's own: a new agent starts with every tool at the default, which allows
+The policy decides each call alone: the SDK reads no mandates and asks for none. Delegate, which left a tool to a
+person's mandate, is no longer offered, and a policy that still sets it refuses the tool as Deny does. The policy is
+the agent's own: a new agent starts with every tool at the default, which allows
 it. Every call, allowed or refused, is in the agent's audit trail.
 
 ## Environment

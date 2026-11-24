@@ -18,11 +18,11 @@ No infrastructure, no keys, about 1 s. `test/*.spec.ts`:
 
 | Area | Files | Tests |
 | --- | --- | --- |
-| The guard: check, settle, the offline verifier, outcomes | `guard`, `guard-check`, `testing`, `events` | 45 |
+| The guard: check, settle, the offline verifier, outcomes | `guard`, `guard-check`, `testing`, `events` | 42 |
 | Keys and registration | `key-provider`, `stored-key`, `register`, `via` | 34 |
-| The Humanos connector | `via-mcp-client`, `mcp-guard-verifier`, `mandate-request`, `declare`, `tool-registry` | 52 |
+| The Humanos connector | `via-mcp-client`, `mcp-guard-verifier`, `declare`, `tool-registry` | 42 |
 | MCP: the proxy, the proxy command, the connection wrapper (a real MCP SDK client and server) | `proxy`, `proxy-command`, `mcp-transport` | 39 |
-| Framework adapters, and what they share (one check, one settle, one MCP routing) | `adapters-shared`, `ai-sdk-adapter`, `claude-agent-sdk-adapter`, `langchain-adapter` | 21 |
+| Framework adapters, and what they share (one check, one settle, one MCP routing) | `adapters-shared`, `ai-sdk-adapter`, `claude-agent-sdk-adapter`, `langchain-adapter` | 22 |
 | The CLI on throwaway projects: `init`, `restore`, `register`, `declare`, `status` | `cli` | 13 |
 | Drafting an action from existing tools | `extract`, `import-action` | 13 |
 
@@ -45,7 +45,7 @@ Every driver runs the same scenarios (`test/frameworks/contract.ts`):
 | Allow | the tool runs, its outcome is reported, and the model gets its result |
 | Deny | the tool never runs, nothing is reported, and the model is told why |
 | Tool error | the outcome is reported as failed |
-| Delegate | refused `mandate_required` while no mandate covers it |
+| Delegate, on an older platform | refused `mandate_required`, as the policy refuses a call |
 | Parallel calls | two calls in one step each get their own decision and outcome |
 | Humanos unreachable | the tool never runs (fail closed) |
 | MCP over stdio, routed | each call checked once; the refused one never reaches the server |
