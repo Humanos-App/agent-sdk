@@ -1,8 +1,8 @@
 # @humanos-ai/agent-sdk
 
-Put an AI agent under its organization's **policy**, and a **mandate** where the policy asks for one: a signed,
-bounded permission a person grants. The agent holds its own key; every tool call is proved with it and verified by
-Humanos *before* the tool runs, and every decision and outcome is written to a signed, hash-chained record.
+Put an AI agent under its organization's **policy**, which decides each tool call: allowed, limited by a control's
+rules, or refused. The agent holds its own key; every tool call is proved with it and verified by Humanos *before* the
+tool runs, and every decision and outcome is written to a signed, hash-chained record.
 
 The VIA protocol itself — credentials, events, verification — is
 [`@humanos-ai/via-sdk`](https://github.com/Humanos-App/via-sdk), installed with it. This package is the
@@ -19,8 +19,8 @@ For complete, runnable agents built on it, see
 | **`via`** | the agent's Humanos from its environment: the connector, the key (`HUMANOS_AGENT_KEY` or `.humanos/agent-key.json`), the DID, the guard and the tool registry, one per process |
 | **`ViaGuard`** | the gate around every tool call: the mandate it presents, if any → challenge → proof of possession → verify → run or refuse → report the outcome. `check` and `settle` split it for a framework that runs the tool itself |
 | **`createViaMcpClient`** | the Humanos connector, authenticated with an API key and its signing secret: the organization's, or an agent key issued for one agent |
-| **`McpGuardVerifier`**, **`policyMandates`** | the connector as the guard's verifier, and the mandate each call presents, from the policy (`getPolicy`) and the mandates held (`getMandates`) |
-| **`requestMandate`**, **`waitForMandate`** | ask a person for a mandate a tool needs, under a control `getAction` describes or as a one-call authorization, and wait for their answer (`mandateStatus`) |
+| **`McpGuardVerifier`**, **`policyMandates`** | the connector as the guard's verifier, and the guard's mandate source, which reads only the policy (`getPolicy`) and presents no mandate: the policy decides each call alone |
+| **`requestMandate`**, **`waitForMandate`** | ask a person for a mandate, under a control `getAction` describes or as a one-call authorization, and wait for their answer (`mandateStatus`); `policyMandates` does not present it ([Mandates](#mandates)) |
 | **`startViaMcpProxy`** | a governing proxy in front of MCP servers you did not write; `refresh()` declares their new tools |
 | **`@humanos-ai/agent-sdk/mcp`**, **`via().mcp`** | the connection wrapper: an MCP client transport with every `tools/list` declared and every `tools/call` checked, the proxy inside the agent's process; `routeStdio` puts a stdio server entry behind the proxy, which `humanos proxy` runs |
 | **`registerAgent`** | register the agent's key with the organization, and optionally its tools; Humanos grades how the key is held and answers the agent's DID. With `humanosHoldsKey`, Humanos mints the key and holds it |
@@ -112,48 +112,22 @@ const guard = new ViaGuard({ agentDid: did, verifier: new McpGuardVerifier(clien
 
 ### How a call is decided
 
-The organization's policy decides first (v0.3 §21.3): a tool it allows runs, one it refuses is `policy_denied`, one
-under a control's rules runs within them, and one it leaves to a person's mandate needs one. A tool it sets nothing
-for gets its default, allowed or not. `agentDid` names the agent on every call.
+The organization's policy decides each call alone (v0.3 §21.3): a tool it allows runs, one it refuses is
+`policy_denied`, and one under a control's rules runs within them and is refused over them. A tool it sets nothing for
+gets its default, allowed or not. `agentDid` names the agent on every call.
 
-`policyMandates` reads `get_policy` and `get_mandate` once, and presents a held mandate only for a tool the policy
-leaves to one: one on the control the policy names first, else any covering the tool, a plain authorization
-included. Every other call binds the policy alone. A `mandate_required` deny reads both again, and the guard
-presents the call once more when a mandate now fits: a person has just granted one, or the policy changed. Nobody
-is asked to confirm a call: one a policy or a mandate puts behind a step-up is refused `stepup_required`.
+The SDK reads no mandates. `policyMandates` reads `get_policy` once, keeps it, and presents no mandate: every call
+binds the policy. It no longer calls `get_mandate`, which Humanos is removing; an agent on 0.4.3 or earlier still
+calls it, and needs this release before Humanos removes it. Nobody is asked to confirm a call: one a policy puts
+behind a step-up is refused `stepup_required`.
 
-### When a tool needs a person's mandate
+### Mandates
 
-A `mandate_required` deny says what to ask for in `ViaDeniedError.request`: a guardrail under one of `actionIds`, whose
-limits `getAction` describes, or, with no control for the tool, an authorization in plain words. Whom to ask and the
-limits' values come from your agent's own context:
-
-```ts
-import { getAction, requestMandate, waitForMandate, ViaDeniedError } from '@humanos-ai/agent-sdk';
-
-try {
-  await guard.call('issue_refund', args, issueRefund);
-} catch (e) {
-  if (!(e instanceof ViaDeniedError) || e.reason !== 'mandate_required' || !e.request) throw e;
-  const req =
-    e.request.kind === 'guardrail'
-      ? await requestMandate(client, did, {
-          kind: 'guardrail',
-          actionId: e.request.actionIds[0]!,
-          userParams: limitsFor(await getAction(client, e.request.actionIds[0]!)), // yours: the values the person sets
-          contact,
-        })
-      : await requestMandate(client, did, { kind: 'authorization', name: 'Refund A-1', terms: 'Refund order A-1, €40', contact });
-  show(req.consentCard.link); // the person approves on their own device
-  if ((await waitForMandate(client, req)).phase === 'ACTIVE') await guard.call('issue_refund', args, issueRefund);
-}
-```
-
-An authorization asks for one call, ending in an hour, unless `maxExecutions` and `validUntil` say otherwise: with no
-rules, it opens every tool the policy leaves to a mandate without naming a control. `waitForMandate` returns once the
-person decides (`ACTIVE`, `REJECTED`, `INACTIVE`), or still `PENDING` at the earlier of the consent link's expiry and
-ten minutes (`until` changes it; `signal` stops it). The call after an approval presents the new mandate on its own.
-`mandateStatus` asks once, for a builder that waits its own way.
+Humanos's Agents product has no mandates for now: Delegate, the access that left a tool to a person's mandate, is no
+longer offered. If Humanos still refuses a call `mandate_required` (a policy that leaves the tool to a mandate), the
+guard reads the policy again and presents no mandate: the call stays refused, and `ViaDeniedError.request` says what
+the policy asked for. Give the tool another access in the policy. `requestMandate`, `waitForMandate`, `mandateStatus`
+and `getAction` are still in the SDK, but a mandate they obtain is not presented by `policyMandates`.
 
 ## Govern MCP servers you did not write
 
@@ -175,8 +149,7 @@ await proxy.refresh('Slack');
 await declareTools(client, did, [], { emptyServices: ['Files'] });
 ```
 
-Per call, the proxy presents a mandate only for a tool the organization's policy leaves to one: the one whose
-person's `allowed_tools`, or whose action's `tools`, names the tool. Every other call is decided on the policy alone.
+Per call, the organization's policy decides alone: the proxy reads it at start and presents no mandate.
 
 A call to a remote server reached over `https` names that server's origin as the receiver, and an `allow` then
 carries the call proof (v0.3 §16.16): the decision token and the agent's record token, both signed by Humanos. The

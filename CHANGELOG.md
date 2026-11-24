@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+The SDK no longer calls `get_mandate`. Humanos's Agents product has no mandates for now: the organization's policy
+decides each call alone (allow, restrict or deny), and Delegate, which left a tool to a person's mandate, is no longer
+offered. Humanos will remove `get_mandate` once agents run an SDK that does not call it. Agents on 0.4.3 or earlier
+keep working until then, but they call it (on the first guarded call, or when the proxy starts), and once it is gone
+every guarded call fails and the proxy does not start: upgrade before Humanos removes it.
+
+**Breaking**
+
+- `policyMandates` reads only `get_policy`, once, and presents no mandate whatever the tool's access: every call binds
+  the policy. A `mandate_required` refusal reads the policy again, so `requestFor` answers from what it says now; the
+  call is not presented again. `read()`, and the proxy's `refreshMandates()`, answer `held: []`.
+- `getMandates` and `HeldMandate` are removed: they existed only to call `get_mandate`. `GuardMandate` keeps its shape
+  (its `action` is typed in place); `CallMandate['mandate']` names a mandate credential where `HeldMandate['mandate']`
+  did.
+- The proxy presents no mandate either, and its instructions to the model no longer speak of one.
+
+**Deprecated**
+
+- `coveringMandate`, `mandateCoverage`, `pickMandate`, `PolicyMandatesOptions.pick` and the proxy's `mandateFor`: the
+  SDK no longer calls them, and they stay for code that holds mandates of its own. `requestMandate`,
+  `waitForMandate`, `mandateStatus` and `getAction` are unchanged, but `policyMandates` does not present a mandate
+  they obtain.
+
+**Changed**
+
 - `@humanos-ai/via-sdk` is a dependency, pinned to `0.8.1` (was the peer `^0.8.1`): `npm install @humanos-ai/agent-sdk`
   installs it, and an agent runs the protocol code this release was tested on. An agent that installs via-sdk itself
   at another version gets its own copy beside this one, which is harmless: the SDK passes only plain data across.

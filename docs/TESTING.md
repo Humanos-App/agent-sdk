@@ -20,8 +20,8 @@ No infrastructure, no keys, about 1 s. `test/*.spec.ts`:
 | --- | --- | --- |
 | The guard: check, settle, the offline verifier, outcomes | `guard`, `guard-check`, `testing`, `events` | 45 |
 | Keys and registration | `key-provider`, `stored-key`, `register`, `via` | 34 |
-| The Humanos connector | `via-mcp-client`, `mcp-guard-verifier`, `mandate-request`, `declare`, `tool-registry` | 55 |
-| MCP: the proxy, the proxy command, the connection wrapper (a real MCP SDK client and server) | `proxy`, `proxy-command`, `mcp-transport` | 43 |
+| The Humanos connector | `via-mcp-client`, `mcp-guard-verifier`, `mandate-request`, `declare`, `tool-registry` | 52 |
+| MCP: the proxy, the proxy command, the connection wrapper (a real MCP SDK client and server) | `proxy`, `proxy-command`, `mcp-transport` | 39 |
 | Framework adapters, and what they share (one check, one settle, one MCP routing) | `adapters-shared`, `ai-sdk-adapter`, `claude-agent-sdk-adapter`, `langchain-adapter` | 21 |
 | The CLI on throwaway projects: `init`, `restore`, `register`, `declare`, `status` | `cli` | 13 |
 | Drafting an action from existing tools | `extract`, `import-action` | 13 |
@@ -175,7 +175,6 @@ A new agent's tools start at the policy's default: the policy is set per agent.
 ## Not covered yet
 
 - MCP against a real platform: the contract covers it against the fake Humanos only.
-- A mandate a person grants, then the call running: the contract covers the refusal only.
 - Cloudflare Agents against a real platform (its connector calls happen in the Worker), MCP inside a Worker, the
   `AIChatAgent` chat path, a deployed Worker.
 - The no-code Claude agent's decisions read back automatically (the walkthrough checks them by hand).
