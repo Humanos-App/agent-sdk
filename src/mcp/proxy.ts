@@ -11,14 +11,11 @@
  *
  * At start: the servers' tools are merged into one surface (a name two servers share is prefixed
  * with the service), declared to Humanos as the servers describe them, verbatim (`declareTools`) —
- * so the Tools tab fills itself with facts, not with what a model chose to say — and the mandates
- * the organization's policy and the mandates this actor holds are read. Declaring new tools is the
- * agent's to do: when its servers' tools change, it calls `refresh`, which lists them again and
- * declares only the services whose declaration changed. Per call, one guard for the agent: the
- * organization's policy decides first (v0.3 §21.3), and a held mandate is presented only for a
- * tool the policy leaves to a person's mandate (the person's `allowed_tools` or a pinned action's
- * `tools` naming the tool, else a pinned action declaring every parameter the tool takes, else a
- * plain authorization; one on the control the policy names first). The outcome is reported.
+ * so the Tools tab fills itself with facts, not with what a model chose to say — and the
+ * organization's policy is read. Declaring new tools is the agent's to do: when its servers' tools
+ * change, it calls `refresh`, which lists them again and declares only the services whose
+ * declaration changed. Per call, one guard for the agent: the organization's policy decides each
+ * call alone (v0.3 §21.3), and the proxy presents no mandate. The outcome is reported.
  */
 import { ViaDeniedError, ViaGuard } from '../guard.js';
 import type { ViaAgentKey } from '../key-provider.js';
@@ -26,7 +23,7 @@ import { AGENT_RECORD_HEADER, AGENT_RECORD_META_KEY, CALL_PROOF_HEADER, CALL_PRO
 import type { VerifyOutcome } from '../types.js';
 import type { ViaMcpClient } from './client.js';
 import { declareTools, type DeclaredTool, type ServiceDeclaration } from './declare.js';
-import { McpGuardVerifier, coveringMandate, policyMandates, type AgentPolicy, type GuardMandate } from './guard-verifier.js';
+import { McpGuardVerifier, coveringMandate, policyMandates, type GuardMandate, type PolicyMandates } from './guard-verifier.js';
 import { audienceOf, refusalText } from './refusal.js';
 import { defaultPlainReason, type JsonRpcMessage } from './server.js';
 import type { Upstream, UpstreamCallExtra, UpstreamResult, UpstreamTool } from './upstream.js';
@@ -61,6 +58,9 @@ export interface ViaMcpProxyConfig {
   /**
    * Override which held mandate a call presents, for a tool the organization's policy leaves to a person's mandate.
    * `preferred`: the action versions the policy names for it.
+   *
+   * @deprecated Never called: the proxy holds no mandates, and presents none. The organization's policy decides each
+   * call alone.
    */
   mandateFor?: (tool: ProxiedTool, held: GuardMandate[], preferred: string[]) => GuardMandate | undefined;
   /**
@@ -93,8 +93,8 @@ export interface ViaMcpProxy {
    * each service whose declaration changed. The agent calls it when it knows its tools changed.
    */
   refresh(service?: string): Promise<ServiceDeclaration[]>;
-  /** Read the organization's policy and the held mandates again, for the calls after. */
-  refreshMandates(): Promise<{ policy: AgentPolicy; held: GuardMandate[] }>;
+  /** Read the organization's policy again, for the calls after. The proxy holds no mandates: `held` is always empty. */
+  refreshMandates(): ReturnType<PolicyMandates['read']>;
   close(): Promise<void>;
 }
 
@@ -142,6 +142,9 @@ const paramsOf = (tool: ProxiedTool): string[] => Object.keys(((tool.definition.
  * Which held mandate a call presents (`coveringMandate`): exact first — the person's `allowed_tools`, or the pinned
  * action's `tools` (v0.3 §0.6.1), names the tool — then a pinned action that lists no tools and declares every
  * parameter the tool takes, then a plain authorization; at each rank, one pinning a `preferred` action version first.
+ *
+ * @deprecated The proxy no longer calls it: it holds no mandates, and presents none. Kept for code that holds mandates
+ * of its own.
  */
 export function pickMandate(tool: ProxiedTool, held: GuardMandate[], preferred: string[] = []): GuardMandate | undefined {
   return coveringMandate(tool.upstreamName, paramsOf(tool), held, preferred);
@@ -150,7 +153,6 @@ export function pickMandate(tool: ProxiedTool, held: GuardMandate[], preferred: 
 export async function startViaMcpProxy(cfg: ViaMcpProxyConfig): Promise<ViaMcpProxy> {
   const plainReason = cfg.plainReason ?? defaultPlainReason;
   const verifier = new McpGuardVerifier(cfg.humanos);
-  const pick = cfg.mandateFor ?? pickMandate;
   const warn = cfg.onWarning ?? ((m: string) => void process.stderr.write(`via-proxy: ${m}\n`));
 
   // ── the merged surface: every server's tools, as last listed ──
@@ -222,14 +224,8 @@ export async function startViaMcpProxy(cfg: ViaMcpProxyConfig): Promise<ViaMcpPr
   const services = [...new Set(tools.map((t) => t.service))];
   await declareChanged();
 
-  // ── the policy and the mandates this actor holds, read once and again on a `mandate_required` ──
-  const mandates = policyMandates(cfg.humanos, cfg.did, {
-    // Rules and policies speak of the upstream's name: a name two services share picks by the first one's schema.
-    pick: (call, held, preferred) => {
-      const tool = tools.find((t) => t.upstreamName === call.tool);
-      return tool ? pick(tool, held, preferred) : coveringMandate(call.tool, [], held, preferred);
-    },
-  });
+  // ── the organization's policy, read once and again on a `mandate_required`; no mandate is presented ──
+  const mandates = policyMandates(cfg.humanos, cfg.did);
   await mandates.read();
   const guard = new ViaGuard({ agentKey: cfg.agentKey, agentDid: cfg.did, verifier, mandates, mode: cfg.mode ?? 'enforce' });
 
@@ -263,7 +259,7 @@ export async function startViaMcpProxy(cfg: ViaMcpProxyConfig): Promise<ViaMcpPr
 
   const instructions =
     cfg.instructions ??
-    `Tools from ${services.join(', ')}, governed by VIA: every call is verified against the organization's policy, and a mandate a person granted where the policy asks for one, before it reaches the service. ` +
+    `Tools from ${services.join(', ')}, governed by VIA: every call is verified against the organization's policy before it reaches the service. ` +
       'A blocked call says why — do not retry it.';
 
   const handleRpc = async (msg: JsonRpcMessage): Promise<JsonRpcMessage | null> => {

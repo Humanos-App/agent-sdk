@@ -1,7 +1,8 @@
 /**
  * A stand-in Humanos connector over `createTestVerifier`: the connector's tools (`challenge`, `verify`,
- * `report_outcome`, `get_policy`, `get_mandate`, `declare_tools`, `register_challenge`, `register`) answered by the
- * in-process verifier, so code that talks to the connector (the proxy, `via()`) runs against the test policy.
+ * `report_outcome`, `get_policy`, `declare_tools`, `register_challenge`, `register`) answered by the in-process
+ * verifier, so code that talks to the connector (the proxy, `via()`) runs against the test policy. There is no
+ * `get_mandate`: the SDK reads no mandates, and a call to it is refused as an unknown tool.
  *
  * In process it is a `ViaMcpClient`; `serveConnector` puts the same one on HTTP, checking each request's HMAC as the
  * platform does, for agents in another process (a hook, the `humanos proxy` binary). Both record into the same
@@ -37,7 +38,6 @@ export function fakeConnector(verifier: GuardVerifier, did: string, policy: Reco
           case 'verify': return json(await verifier.verify(args as never));
           case 'report_outcome': return json(await verifier.reportOutcome(args as never));
           case 'get_policy': return json({ agent: did, tools: Object.entries(policy).map(([tool, access]) => ({ tool, access, meaning: access })) });
-          case 'get_mandate': return json([]);
           case 'register_challenge': return json({ regNonce: 'reg-nonce', aud: 'did:web:humanos.tech' });
           case 'register': return json({ did, keyId: `${did}#key-1`, granted: { assurance: 'pop', binding: 'self' }, existing: false });
           case 'declare_tools': {

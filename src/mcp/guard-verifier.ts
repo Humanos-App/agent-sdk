@@ -15,14 +15,13 @@
  *    `challenge` / `report_outcome` means the request could not be answered (an agent outside the
  *    caller's organization, a caller without an org key), which is thrown.
  *
- * Also here, the agent's startup questions: `getMandates` ("which mandates do I hold?"), with the
- * pinned action's rules so the guard's advisory pre-flight has something to evaluate; `getPolicy`
- * ("what does my organization's policy let me do?"); and `policyMandates`, the guard's mandate
- * source built on both.
+ * Also here, the agent's startup question, `getPolicy` ("what does my organization's policy let me
+ * do?"), and `policyMandates`, the guard's mandate source built on it. The SDK reads no mandates:
+ * the organization's policy decides each call alone, so `policyMandates` presents none.
  */
 import type { ViaMcpClient } from './client.js';
 import type { CallMandate, MandateSource } from '../guard.js';
-import type { ActionRule, ViaEvent, ViaMandateCredential } from '../sdk.js';
+import type { ActionRule, ViaEvent } from '../sdk.js';
 import { unwrapUserParamValues } from '../sdk.js';
 import type { ChallengeGrant, CompiledLike, GuardVerifier, MandateRequestHint, ReportOutcomeInput, VerifyInput, VerifyOutcome } from '../types.js';
 
@@ -96,33 +95,18 @@ export class McpGuardVerifier implements GuardVerifier {
   }
 }
 
-/** One held mandate, as `get_mandate` returns it. */
-export interface HeldMandate {
-  mandate: ViaMandateCredential;
+/**
+ * A mandate ready for the guard: its pinned action's rules as the `CompiledLike` the pre-flight takes. `policyMandates`
+ * holds none: the organization's policy decides each call alone.
+ */
+export type GuardMandate = CallMandate & {
+  compiled: CompiledLike;
   /**
    * The pinned, published action version — `content` holds the rules the guard pre-flights, and the tools it
    * covers (`tools`, v0.3 §0.6.1) when it lists them.
    */
   action: { urn: string; content: { rules?: ActionRule[]; tools?: string[] } } | null;
-}
-
-/** A held mandate ready for the guard: its pinned action's rules as the `CompiledLike` the pre-flight takes. */
-export type GuardMandate = CallMandate & { compiled: CompiledLike; action: HeldMandate['action'] };
-
-/**
- * The ACTIVE mandates bound to an agent, from the platform's record — with each one's action
- * shaped as the `CompiledLike` the guard takes.
- */
-export async function getMandates(client: ViaMcpClient, did: string): Promise<GuardMandate[]> {
-  const r = await client.callTool('get_mandate', { did });
-  if (r.isError) throw new McpVerifierError('get_mandate', r.text);
-  const held = parse<HeldMandate[]>('get_mandate', r.text);
-  return held.map((h) => ({
-    mandate: h.mandate,
-    action: h.action,
-    compiled: { actionVersion: { rules: h.action?.content.rules ?? [] } },
-  }));
-}
+};
 
 /** A tool's access as the organization's policy sets it for the agent (v0.3 §21.1); `not_set`: its default decides. */
 export type ToolAccess = 'allow' | 'rules' | 'mandate' | 'deny' | 'not_set';
@@ -161,6 +145,9 @@ export async function getPolicy(client: ViaMcpClient, agentDid: string): Promise
  * action's `tools`, v0.3 §0.6.1), 2 when its pinned action lists no tools and declares every parameter given, 1 for a
  * plain authorization, 0 not at all. A mandate whose `allowed_tools`, or whose action's `tools`, leaves the tool out
  * never covers it: the person already said no, or the action would refuse it `tool_not_covered`.
+ *
+ * @deprecated The SDK holds no mandates to rank: the organization's policy decides each call alone, and
+ * `policyMandates` presents none. Kept for code that holds mandates of its own.
  */
 export function mandateCoverage(h: GuardMandate, tool: string, params: string[]): number {
   const up = unwrapUserParamValues(h.mandate.credentialSubject.mandate.userParams as never);
@@ -176,6 +163,9 @@ export function mandateCoverage(h: GuardMandate, tool: string, params: string[])
 /**
  * The held mandate that best covers a tool (`mandateCoverage`), one pinning a `preferred` action version first: the
  * controls the policy names for the tool.
+ *
+ * @deprecated The SDK holds no mandates to choose from: the organization's policy decides each call alone, and
+ * `policyMandates` presents none. Kept for code that holds mandates of its own.
  */
 export function coveringMandate(tool: string, params: string[], held: GuardMandate[], preferred: string[] = []): GuardMandate | undefined {
   let best: GuardMandate | undefined;
@@ -194,32 +184,36 @@ export function coveringMandate(tool: string, params: string[], held: GuardManda
 export interface PolicyMandatesOptions {
   /**
    * Which held mandate a call presents, for a tool the policy leaves to a person's mandate. `preferred`: the action
-   * versions the policy names for it. Default: `coveringMandate` over the call's parameters.
+   * versions the policy names for it.
+   *
+   * @deprecated Never called: `policyMandates` holds no mandates, and presents none.
    */
   pick?: (call: { tool: string; params: Record<string, unknown> }, held: GuardMandate[], preferred: string[]) => GuardMandate | undefined;
 }
 
 /** `policyMandates`' source, with what it last read. */
 export interface PolicyMandates extends MandateSource {
-  /** Read the policy and the held mandates again, for the calls after. */
-  read(): Promise<{ policy: AgentPolicy; held: GuardMandate[] }>;
+  /** Read the organization's policy again, for the calls after. */
+  read(): Promise<{
+    policy: AgentPolicy;
+    /** @deprecated Always empty: the SDK reads no mandates, and presents none. */
+    held: GuardMandate[];
+  }>;
   /** What a person must grant for a tool the policy leaves to a mandate (`get_policy`'s `request`); none for any other. */
   requestFor(tool: string): Promise<MandateRequestHint | undefined>;
 }
 
 /**
- * The guard's mandate source over the connector (v0.3 §21.3): it reads `get_policy` and `get_mandate` once and keeps
- * them, and presents a held mandate only for a tool the policy leaves to a person's mandate: one under the controls
- * it names, or any covering the tool when it names none. Every other tool presents none: the policy decides it alone.
- * A `mandate_required` refusal reads both again, and the guard presents the call once more if a mandate now fits:
- * the policy changed, or a person has just granted one. The refusal itself is the fact then, so a tool the agent
- * never declared gets a covering mandate too.
+ * The guard's mandate source over the connector (v0.3 §21.3): it reads `get_policy` once and keeps it, and presents no
+ * mandate. The organization's policy decides each call alone (allow, restrict or deny), so the source reads no
+ * mandates, and every call binds the policy. A `mandate_required` refusal, from a policy that still leaves a tool to a
+ * person's mandate, reads the policy again, so `requestFor` answers from what it says now; the call is not presented
+ * again.
  */
-export function policyMandates(client: ViaMcpClient, agentDid: string, opts: PolicyMandatesOptions = {}): PolicyMandates {
-  const pick = opts.pick ?? ((call, held, preferred) => coveringMandate(call.tool, Object.keys(call.params).filter((k) => k !== 'tool'), held, preferred));
-  let state: Promise<{ policy: AgentPolicy; held: GuardMandate[] }> | undefined;
-  const read = (): Promise<{ policy: AgentPolicy; held: GuardMandate[] }> => {
-    const reading = Promise.all([getPolicy(client, agentDid), getMandates(client, agentDid)]).then(([policy, held]) => ({ policy, held }));
+export function policyMandates(client: ViaMcpClient, agentDid: string, _opts: PolicyMandatesOptions = {}): PolicyMandates {
+  let state: ReturnType<PolicyMandates['read']> | undefined;
+  const read = (): ReturnType<PolicyMandates['read']> => {
+    const reading: ReturnType<PolicyMandates['read']> = getPolicy(client, agentDid).then((policy) => ({ policy, held: [] }));
     state = reading;
     // A failed read is not kept: the next call reads again.
     reading.catch(() => {
@@ -234,15 +228,11 @@ export function policyMandates(client: ViaMcpClient, agentDid: string, opts: Pol
       const { policy } = await (state ?? read());
       return policy.tools.find((t) => t.tool === tool && t.access === 'mandate')?.request;
     },
-    async mandateFor(call, retry) {
-      const { policy, held } = await (retry || !state ? read() : state);
-      const entries = policy.tools.filter((t) => t.tool === call.tool);
-      const delegated = entries.find((t) => t.access === 'mandate');
-      if (!delegated && !retry) return undefined;
-      const preferred = [...(retry?.under ?? []).map((u) => u.id), ...(delegated?.mandateControls ?? []).map((c) => c.id)];
-      const candidates = retry?.refused ? held.filter((h) => h.mandate.id !== retry.refused) : held;
-      const h = pick(call, candidates, preferred);
-      return h && { mandate: h.mandate, compiled: h.compiled };
+    async mandateFor(_call, retry) {
+      // The policy is read on the first call and kept, and read again on a `mandate_required`: `requestFor` answers
+      // from it. A call presents no mandate whatever the tool's access.
+      await (retry || !state ? read() : state);
+      return undefined;
     },
   };
 }

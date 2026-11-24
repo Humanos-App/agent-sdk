@@ -70,7 +70,8 @@ export interface CallMandate {
 
 /**
  * Which mandate each call presents (v0.3 §21.3): one only for a tool the organization's policy leaves to a person's
- * mandate, none for any other. `policyMandates` reads both from the Humanos connector.
+ * mandate, none for any other. `policyMandates`, the source over the Humanos connector, reads only the policy and
+ * presents none: the policy decides each call alone.
  */
 export interface MandateSource {
   /**

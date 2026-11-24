@@ -170,8 +170,8 @@ export interface WaitForMandateOptions {
 
 /**
  * Wait for a person's answer to a mandate request: the status once it leaves `PENDING` (`ACTIVE`, `REJECTED` or
- * `INACTIVE`), or the last one, still `PENDING`, when `until` passes. Once it is `ACTIVE`, call the tool again: the
- * guard's mandate source reads the new mandate on the `mandate_required` it meets first.
+ * `INACTIVE`), or the last one, still `PENDING`, when `until` passes. A guard on `policyMandates` does not present the
+ * mandate once it is `ACTIVE`: that source reads no mandates, and the organization's policy decides each call alone.
  */
 export async function waitForMandate(
   client: ViaMcpClient,
