@@ -200,7 +200,7 @@ export function runContract(driver: FrameworkDriver): void {
       else expect(results[0]!.text).toContain('order store down');
     });
 
-    scenario('delegate', 'Delegate: refused mandate_required while no mandate covers it', async () => {
+    scenario('delegate', 'Delegate, on an older platform: refused mandate_required, as the policy refuses a call', async () => {
       const { scene, ran, results } = await play(driver, { policy: { issue_refund: 'mandate' }, steps: [{ calls: [REFUND] }] });
       expect(ran).toEqual([]);
       expect(scene.decisions).toMatchObject([{ tool: 'issue_refund', decision: 'deny', reason: 'mandate_required' }]);

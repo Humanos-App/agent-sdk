@@ -98,14 +98,12 @@ export { createViaMcpClient, signRequest, ViaMcpAuthError } from './mcp/client.j
 export type { ViaMcpClient, ViaMcpClientOptions, ViaToolResult } from './mcp/client.js';
 
 // The GuardVerifier over that client — the connector as the verifier (flow B in
-// spec/END-TO-END-FLOWS.md), plus the startup questions "which mandates do I hold?" and "what does
-// my organization's policy let me do?", and the guard's mandate source built on both.
-export { McpGuardVerifier, McpVerifierError, getMandates, getPolicy, policyMandates, coveringMandate, mandateCoverage } from './mcp/guard-verifier.js';
-export type { HeldMandate, GuardMandate, AgentPolicy, ToolAccess, PolicyMandates, PolicyMandatesOptions } from './mcp/guard-verifier.js';
+// spec/END-TO-END-FLOWS.md), plus the startup question "what does my organization's policy let me
+// do?", and the guard's mandate source built on it, which presents no mandate: the policy decides
+// each call alone. `coveringMandate` and `mandateCoverage` are deprecated: the SDK holds no mandates.
+export { McpGuardVerifier, McpVerifierError, getPolicy, policyMandates, coveringMandate, mandateCoverage } from './mcp/guard-verifier.js';
+export type { GuardMandate, AgentPolicy, ToolAccess, PolicyMandates, PolicyMandatesOptions } from './mcp/guard-verifier.js';
 
-// Asking a person for a mandate: a control's limits, the request, and its answer, waited for.
-export { getAction, requestMandate, mandateStatus, waitForMandate, AUTHORIZATION_DEFAULT_MS, WAIT_DEFAULT_MS } from './mcp/mandate-request.js';
-export type { ActionView, ActionParam, MandateRequestInput, MandateRequested, MandateStatus, WaitForMandateOptions } from './mcp/mandate-request.js';
 export type { StdioTransport } from './mcp/stdio.js';
 
 // The wire contract.
@@ -119,7 +117,6 @@ export type {
   ChallengeGrant,
   // v0.3 §21.4 — who a call is for, and the mandate or policy its PoP binds.
   CallAuthority,
-  MandateRequestHint,
   McpTool,
   McpToolsList,
   ExtractedDraft,

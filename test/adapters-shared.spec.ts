@@ -22,6 +22,14 @@ describe('checkCall — the check every adapter makes', () => {
     await scene.close();
   });
 
+  it('an older platform’s mandate_required: refused in the policy’s words, with nothing to ask a person for', async () => {
+    const scene = await agentScene({ issue_refund: 'mandate' });
+    const call = await checkCall(scene.via, 'issue_refund', {});
+    expect(call).toMatchObject({ ok: false, message: 'Blocked by Humanos (mandate_required): the organization’s policy does not allow it. Nothing was run. Do not retry.' });
+    expect(call.ok ? 'allowed' : call.checked).not.toHaveProperty('request');
+    await scene.close();
+  });
+
   it('Humanos unreachable: refused, never let through, with no check', async () => {
     const scene = await agentScene({ lookup_order: 'allow' });
     scene.humanos.down = true;

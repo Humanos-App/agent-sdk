@@ -2,6 +2,54 @@
 
 ## Unreleased
 
+The SDK no longer asks for mandates, and no longer calls `get_mandate`. Humanos's Agents product has no mandates: the
+organization's policy decides each call (allow, restrict or deny), and Delegate, which left a tool to a person's
+mandate, is no longer offered. A policy entry that still leaves a tool to a mandate (Delegate, or a `mandate` default)
+now reads as deny: Humanos refuses its calls `policy_denied`, as for a Deny entry, and `get_policy` reports
+`access: 'deny'`. Humanos removes `request_mandate`, `mandate_status`, `get_action` and `propose_action` now; this
+release removes the SDK's wrappers for the first three (it never called `propose_action`), and code on 0.4.3 that calls
+those wrappers fails now.
+
+Humanos will remove `get_mandate` once agents run an SDK that does not call it. Agents on 0.4.3 or earlier keep working
+until then, but they call it (on the first guarded call, or when the proxy starts), and once it is gone every guarded
+call fails and the proxy does not start: upgrade before Humanos removes it.
+
+**Breaking**
+
+- No mandate-request API: `requestMandate`, `waitForMandate`, `mandateStatus`, `getAction`,
+  `AUTHORIZATION_DEFAULT_MS` and `WAIT_DEFAULT_MS` are removed, with their types `ActionView`, `ActionParam`,
+  `MandateRequestInput`, `MandateRequested`, `MandateStatus` and `WaitForMandateOptions`: the connector tools they
+  called (`request_mandate`, `mandate_status`, `get_action`) are gone from Humanos.
+- A `mandate_required`, which only an older platform still answers, is refused as the policy refuses a call: in
+  `policy_denied`'s words ("the organization's policy does not allow it", and not to retry), with nothing to ask a
+  person for, and presented once. `refusalText`, what the proxy and the connection wrapper tell the model, no longer
+  names a mandate, a person or `get_action`, and `defaultPlainReason('mandate_required')` is `policy_denied`'s. The
+  reason stays `mandate_required`, as the platform recorded it.
+- No request hint: `ViaDeniedError.request` (the constructor's fifth argument), `GuardCheck.request`,
+  `GuardCallOutcome.request`, `MandateSource.requestFor`, `PolicyMandates.requestFor` and `MandateRequestHint` are
+  removed.
+- The guard asks its `MandateSource` once per call and presents the call once: `mandateFor` has no `retry` argument,
+  and a source that declares one as required no longer type-checks.
+- `getPolicy` reads an older platform's `access: 'mandate'`, and a `mandate` default, as `deny` (with the platform's
+  meaning for a Deny entry), and leaves out the tool's `mandateControls` and `request`. `ToolAccess` has no `mandate`,
+  and `AgentPolicy`'s tools have neither field. `humanos status` shows such a tool as `deny`.
+- `policyMandates` presents no mandate whatever the tool's access, and reads nothing for a call: every call binds the
+  policy. `read()`, and the proxy's `refreshMandates()`, read only `get_policy` and answer `held: []`; the proxy reads
+  it at start, as before.
+- `getMandates` and `HeldMandate` are removed: they existed only to call `get_mandate`. `GuardMandate` keeps its shape
+  (its `action` is typed in place); `CallMandate['mandate']` names a mandate credential where `HeldMandate['mandate']`
+  did.
+- The proxy presents no mandate either, and its instructions to the model no longer speak of one.
+
+**Deprecated**
+
+- `coveringMandate`, `mandateCoverage`, `pickMandate`, `PolicyMandatesOptions.pick` and the proxy's `mandateFor`: the
+  SDK no longer calls them, and they stay for code that holds mandates of its own.
+- `under` on `ViaDeniedError`, `GuardCheck`, `GuardCallOutcome` and `VerifyOutcome`: only an older platform's
+  `mandate_required` names it.
+
+**Changed**
+
 - `@humanos-ai/via-sdk` is a dependency, pinned to `0.8.1` (was the peer `^0.8.1`): `npm install @humanos-ai/agent-sdk`
   installs it, and an agent runs the protocol code this release was tested on. An agent that installs via-sdk itself
   at another version gets its own copy beside this one, which is harmless: the SDK passes only plain data across.

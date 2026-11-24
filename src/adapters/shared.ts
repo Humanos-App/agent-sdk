@@ -43,8 +43,8 @@ export async function checkCall(v: Via, tool: string, args: Record<string, unkno
 /** A refusal as an error a framework throws: a `ViaDeniedError` with the refusal's words when Humanos refused, else an `Error`. */
 export function refusalError(refused: Extract<CallCheck, { ok: false }>): Error {
   if (!refused.checked) return new Error(refused.message);
-  const { reason, evaluations, under, mandateId, request } = refused.checked;
-  const denied = new ViaDeniedError(reason, evaluations, under, mandateId, request);
+  const { reason, evaluations, under, mandateId } = refused.checked;
+  const denied = new ViaDeniedError(reason, evaluations, under, mandateId);
   denied.message = refused.message;
   return denied;
 }
