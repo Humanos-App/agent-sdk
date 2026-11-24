@@ -84,7 +84,7 @@ describe('Cloudflare Agents (an Agent in workerd, through the AI SDK adapter)', 
     expect(scene.outcomes).toEqual([{ decisionEventId: scene.decisions[0]!.eventId, outcome: 'failed', error: 'order store down' }]);
   });
 
-  it('Delegate: refused mandate_required while no mandate covers it', async () => {
+  it('Delegate, on an older platform: refused mandate_required, as the policy refuses a call', async () => {
     const { scene, out } = await play({ issue_refund: 'mandate' }, [{ calls: [REFUND] }]);
     expect(out.ran).toEqual([]);
     expect(scene.decisions).toMatchObject([{ tool: 'issue_refund', decision: 'deny', reason: 'mandate_required' }]);

@@ -224,7 +224,7 @@ export async function startViaMcpProxy(cfg: ViaMcpProxyConfig): Promise<ViaMcpPr
   const services = [...new Set(tools.map((t) => t.service))];
   await declareChanged();
 
-  // ── the organization's policy, read once and again on a `mandate_required`; no mandate is presented ──
+  // ── the organization's policy, read once at start; no mandate is presented ──
   const mandates = policyMandates(cfg.humanos, cfg.did);
   await mandates.read();
   const guard = new ViaGuard({ agentKey: cfg.agentKey, agentDid: cfg.did, verifier, mandates, mode: cfg.mode ?? 'enforce' });
@@ -250,7 +250,7 @@ export async function startViaMcpProxy(cfg: ViaMcpProxyConfig): Promise<ViaMcpPr
       if (!r) return text('', false);
       return { content: r.content, ...(r.structuredContent !== undefined ? { structuredContent: r.structuredContent } : {}) };
     } catch (e) {
-      // Refused: the plain reason, or, when the policy leaves the tool to a person's mandate, which one it needs.
+      // Refused: the plain reason, and not to retry.
       if (e instanceof ViaDeniedError) return text(refusalText({ name: tool.upstreamName, service: tool.service }, e, plainReason), true);
       if (e instanceof UpstreamToolError) return { content: e.result.content, isError: true };
       return text(`Error: ${e instanceof Error ? e.message : String(e)}`, true);

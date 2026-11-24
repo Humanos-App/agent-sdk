@@ -2,7 +2,7 @@ import { actionHash, evaluateRules, jwkThumbprint, policyActionHash, unwrapUserP
 import type { RuleEvaluation, ViaMandateCredential } from './sdk.js';
 import { buildDelegatedPoP, type ViaAgentKey } from './key-provider.js';
 import { outcomeParams, type AgentOutcomeKind } from './events.js';
-import type { CallAuthority, ChallengeGrant, CompiledLike, GuardVerifier, MandateRequestHint, VerifyOutcome } from './types.js';
+import type { CallAuthority, ChallengeGrant, CompiledLike, GuardVerifier, VerifyOutcome } from './types.js';
 
 export type { GuardVerifier, VerifyOutcome } from './types.js';
 
@@ -10,12 +10,14 @@ export class ViaDeniedError extends Error {
   constructor(
     public readonly reason: string | undefined,
     public readonly evaluations: RuleEvaluation[],
-    /** v0.3 §21.3 — with `mandate_required`: the actions a mandate must be under, any one of them. */
+    /**
+     * The controls an older platform's `mandate_required` named (v0.3 §21.3).
+     *
+     * @deprecated Humanos no longer answers `mandate_required`, and the SDK asks nobody for a mandate.
+     */
     public readonly under?: { id: string }[],
     /** The mandate the call presented; none when the policy alone decided it. */
     public readonly mandateId?: string,
-    /** With `mandate_required`: what to ask a person for (`requestMandate`). */
-    public readonly request?: MandateRequestHint,
   ) {
     super(`via: tool call denied (${reason ?? 'unknown'})`);
     this.name = 'ViaDeniedError';
@@ -30,12 +32,14 @@ export interface GuardCallOutcome<T = unknown> {
   result?: T;
   /** True when a deny was recorded but the tool executed anyway (`observe` mode, R5b). */
   observed?: boolean;
-  /** On a `mandate_required` deny: the actions a mandate must be under, any one of them (v0.3 §21.3). */
+  /**
+   * The controls an older platform's `mandate_required` named (v0.3 §21.3).
+   *
+   * @deprecated Humanos no longer answers `mandate_required`, and the SDK asks nobody for a mandate.
+   */
   under?: { id: string }[];
   /** The mandate the call presented; none when the policy alone decided it. */
   mandateId?: string;
-  /** On a `mandate_required` deny: what to ask a person for (`requestMandate`). */
-  request?: MandateRequestHint;
 }
 
 /**
@@ -50,12 +54,14 @@ export interface GuardCheck {
   evaluations: RuleEvaluation[];
   /** On a deny that `observe` lets through. */
   observed?: boolean;
-  /** On a `mandate_required` deny: the actions a mandate must be under, any one of them (v0.3 §21.3). */
+  /**
+   * The controls an older platform's `mandate_required` named (v0.3 §21.3).
+   *
+   * @deprecated Humanos no longer answers `mandate_required`, and the SDK asks nobody for a mandate.
+   */
   under?: { id: string }[];
   /** The mandate the call presented; none when the policy alone decided it. */
   mandateId?: string;
-  /** On a `mandate_required` deny: what to ask a person for (`requestMandate`). */
-  request?: MandateRequestHint;
   /** The decision `settle` reports against. Plain data, so a hook in another process can keep it and settle there. */
   decisionId?: string;
   /** The verifier's answer: with an `audience`, an allow carries the call proof (`outcome.callProof`). */
@@ -70,21 +76,12 @@ export interface CallMandate {
 
 /**
  * Which mandate each call presents (v0.3 §21.3): one only for a tool the organization's policy leaves to a person's
- * mandate, none for any other. `policyMandates`, the source over the Humanos connector, reads only the policy and
- * presents none: the policy decides each call alone.
+ * mandate, none for any other. `policyMandates`, the source over the Humanos connector, presents none: the policy
+ * decides each call alone.
  */
 export interface MandateSource {
-  /**
-   * The mandate this call presents, or none. With `retry`, the verifier has just refused the call `mandate_required`:
-   * read again what the choice rests on, and choose a mandate other than `refused` (the one the call presented),
-   * preferring one under `under` when the refusal named it.
-   */
-  mandateFor(
-    call: { tool: string; params: Record<string, unknown> },
-    retry?: { refused?: string; under?: { id: string }[] },
-  ): CallMandate | undefined | Promise<CallMandate | undefined>;
-  /** What a person must grant for the tool when the policy leaves it to a mandate, as the source last read it. */
-  requestFor?(tool: string): MandateRequestHint | undefined | Promise<MandateRequestHint | undefined>;
+  /** The mandate this call presents, or none. Asked once per call: a refused call is not presented again. */
+  mandateFor(call: { tool: string; params: Record<string, unknown> }): CallMandate | undefined | Promise<CallMandate | undefined>;
 }
 
 export interface GuardOptions {
@@ -100,7 +97,7 @@ export interface GuardOptions {
   verifier: GuardVerifier;
   /**
    * Which mandate each call presents. With neither this nor `mandate`, every call is decided on the organization's
-   * policy alone, and a tool it leaves to a person is refused `mandate_required`.
+   * policy alone.
    */
   mandates?: MandateSource;
   /**
@@ -199,15 +196,14 @@ export class ViaGuard {
   ): Promise<GuardCallOutcome<T>> {
     const checked = await this.check(tool, args, opts);
     if (!checked.proceed) {
-      throw new ViaDeniedError(checked.reason, checked.evaluations, checked.under, checked.mandateId, checked.request);
+      throw new ViaDeniedError(checked.reason, checked.evaluations, checked.under, checked.mandateId);
     }
-    const { decision, reason, evaluations, observed, under, mandateId, request } = checked;
+    const { decision, reason, evaluations, observed, under, mandateId } = checked;
     return {
       decision,
       ...(decision === 'deny' ? { reason, observed } : {}),
       evaluations,
       ...(under ? { under } : {}),
-      ...(request ? { request } : {}),
       ...(mandateId ? { mandateId } : {}),
       result: await this.execute<T>(args, impl, checked),
     };
@@ -220,7 +216,7 @@ export class ViaGuard {
    */
   async check(tool: string, args: Record<string, unknown>, opts: { audience?: string } = {}): Promise<GuardCheck> {
     const params = { ...args, tool };
-    let presented = await this.mandateFor(tool, params);
+    const presented = await this.mandateFor(tool, params);
 
     // Local pre-flight (advisory only, R5/v0.2-new §5.3.1): saves a round-trip on obvious denials
     // in enforce mode; NEVER authoritative and never a substitute for the verifier.
@@ -232,19 +228,9 @@ export class ViaGuard {
       void preflight; // advisory: a real SDK would log/telemetry this; the decision stays with the verifier.
     }
 
-    let outcome = await this.present(tool, params, presented?.mandate.id, opts.audience);
-    // The policy may have changed since the source read it, or a person may just have granted a mandate: the source
-    // reads again, and the call is presented once more when that changes the mandate it presents.
-    if (outcome.decision === 'deny' && outcome.reason === 'mandate_required' && this.opts.mandates) {
-      const again = await this.opts.mandates.mandateFor(
-        { tool, params },
-        { ...(presented ? { refused: presented.mandate.id } : {}), ...(outcome.under ? { under: outcome.under } : {}) },
-      );
-      if (again && again.mandate.id !== presented?.mandate.id) {
-        presented = again;
-        outcome = await this.present(tool, params, again.mandate.id, opts.audience);
-      }
-    }
+    // Presented once, whatever the answer. A `mandate_required`, which only an older platform answers (a tool its policy
+    // left to a person's mandate), is refused as the policy's own deny is: nobody is asked for a mandate.
+    const outcome = await this.present(tool, params, presented?.mandate.id, opts.audience);
 
     // The decision to report against — the signed event when the verifier returned it, or the
     // id alone when the platform appends the signed event later (outbox).
@@ -253,7 +239,6 @@ export class ViaGuard {
     const decided = { evaluations: outcome.evaluations, outcome, ...(mandateId ? { mandateId } : {}), ...(decisionId ? { decisionId } : {}) };
     if (outcome.decision === 'allow') return { decision: 'allow', proceed: true, ...decided };
 
-    const request = outcome.reason === 'mandate_required' ? await this.requestFor(tool, outcome.under) : undefined;
     return {
       decision: 'deny',
       reason: outcome.reason,
@@ -262,7 +247,6 @@ export class ViaGuard {
       proceed: this.mode === 'observe',
       ...(this.mode === 'observe' ? { observed: true } : {}),
       ...(outcome.under ? { under: outcome.under } : {}),
-      ...(request ? { request } : {}),
       ...decided,
     };
   }
@@ -275,12 +259,6 @@ export class ViaGuard {
     if (result.error === undefined) return this.report(checked.decisionId, checked.mandateId, 'completed');
     const { error } = result;
     return this.report(checked.decisionId, checked.mandateId, 'failed', error instanceof Error ? error.message : String(error));
-  }
-
-  /** What to ask a person for: the controls the refusal named (`under`), else what the source read of the policy. */
-  private async requestFor(tool: string, under?: { id: string }[]): Promise<MandateRequestHint | undefined> {
-    if (under?.length) return { kind: 'guardrail', actionIds: under.map((u) => u.id) };
-    return this.opts.mandates?.requestFor?.(tool);
   }
 
   /** The mandate this call presents: the fixed one, the source's choice, or none. */

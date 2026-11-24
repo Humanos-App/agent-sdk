@@ -189,21 +189,26 @@ describe('ViaGuard — a call with no mandate, on the organization policy (v0.3 
     expect(r.verified).toEqual([]);
   });
 
-  it('names the actions a mandate must be under when the policy says which', async () => {
+  it('an older platform\'s mandate_required is refused as a policy deny is: presented once, the controls it named kept, nothing to ask for', async () => {
     const under = [{ id: 'urn:via:action:credit' }];
-    const { verifier } = recorder(() => ({ decision: 'deny', reason: 'mandate_required', evaluations: [], under }));
-    const g = new ViaGuard({ agentKey: await softwareKey(), agentDid: AGENT, verifier });
-    await expect(g.call('issue_credit', {}, () => 'ran')).rejects.toMatchObject({ reason: 'mandate_required', under });
+    const r = recorder(() => ({ decision: 'deny', reason: 'mandate_required', evaluations: [], under }));
+    const g = new ViaGuard({ agentKey: await softwareKey(), agentDid: AGENT, verifier: r.verifier });
+    const refused = await g.call('issue_credit', {}, () => 'ran').catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(ViaDeniedError);
+    expect(refused).toMatchObject({ reason: 'mandate_required', under });
+    expect(refused).not.toHaveProperty('request');
+    expect(r.verified).toHaveLength(1);
+    expect(r.reported).toEqual([]);
   });
 });
 
 describe('ViaGuard — the mandate chosen per call (v0.3 §21.3)', () => {
   /** A source that answers from a list of choices, one per ask, and records each ask. */
   function source(choices: (CallMandate | undefined)[]) {
-    const asked: { tool: string; retry?: { refused?: string; under?: { id: string }[] } }[] = [];
+    const asked: { tool: string }[] = [];
     const mandates: MandateSource = {
-      mandateFor: (call, retry) => {
-        asked.push({ tool: call.tool, ...(retry ? { retry } : {}) });
+      mandateFor: (call) => {
+        asked.push({ tool: call.tool });
         return choices.shift();
       },
     };
@@ -228,70 +233,26 @@ describe('ViaGuard — the mandate chosen per call (v0.3 §21.3)', () => {
     expect(verified[0]).not.toHaveProperty('mandateId');
   });
 
-  it('on mandate_required, asks the source again once, with the mandate refused and the actions named, and presents its new choice', async () => {
-    const other = mandateOf('urn:via:credential:m-2');
-    const under = [{ id: 'urn:via:action:credit' }];
-    const { mandates, asked } = source([{ mandate: MANDATE }, { mandate: other }]);
-    const { g, verified } = await guard(
-      (input) => (input.mandateId === other.id ? allow() : { decision: 'deny', reason: 'mandate_required', evaluations: [], under }),
-      { mandate: undefined, mandates },
-    );
-    const out = await g.call('issue_credit', {}, () => 'ok');
-    expect(out).toMatchObject({ decision: 'allow', mandateId: other.id });
-    expect(asked).toEqual([{ tool: 'issue_credit' }, { tool: 'issue_credit', retry: { refused: MANDATE.id, under } }]);
-    expect(verified.map((v) => v.mandateId)).toEqual([MANDATE.id, other.id]);
-  });
-
-  it('a call that presented none is presented once more when a mandate now fits: a person has just granted one', async () => {
-    const { mandates, asked } = source([undefined, { mandate: MANDATE }]);
-    const { g, verified } = await guard((input) => (input.mandateId ? allow() : { decision: 'deny', reason: 'mandate_required', evaluations: [] }), {
-      mandate: undefined,
-      mandates,
-    });
-    expect((await g.call('issue_credit', {}, () => 'ok')).decision).toBe('allow');
-    expect(asked[1]).toEqual({ tool: 'issue_credit', retry: {} });
-    expect(verified).toHaveLength(2);
-  });
-
-  it('presents no second time when the source has nothing new, and the refusal stands', async () => {
-    const { mandates } = source([{ mandate: MANDATE }, { mandate: MANDATE }]);
+  it('a mandate_required, from an older platform, asks the source nothing more and presents the call once: the refusal stands', async () => {
+    const { mandates, asked } = source([{ mandate: MANDATE }, { mandate: mandateOf('urn:via:credential:m-2') }]);
     const { g, verified } = await guard(() => ({ decision: 'deny', reason: 'mandate_required', evaluations: [] }), { mandate: undefined, mandates });
     await expect(g.call('issue_credit', {}, () => 'ok')).rejects.toMatchObject({ reason: 'mandate_required', mandateId: MANDATE.id });
+    expect(asked).toEqual([{ tool: 'issue_credit' }]);
     expect(verified).toHaveLength(1);
   });
 
-  it('a mandate_required deny says what to ask a person for: the controls it names, else what the source read of the policy', async () => {
-    const under = [{ id: 'urn:via:action:credit:v2' }];
-    const named = await guard(() => ({ decision: 'deny', reason: 'mandate_required', evaluations: [], under }), {
-      mandate: undefined,
-      mandates: { mandateFor: () => undefined, requestFor: () => ({ kind: 'authorization', maxExecutions: 1 }) },
-    });
-    await expect(named.g.call('issue_credit', {}, () => 'ok')).rejects.toMatchObject({
-      request: { kind: 'guardrail', actionIds: ['urn:via:action:credit:v2'] },
-    });
-
-    const hint = { kind: 'authorization', maxExecutions: 1 } as const;
-    const fromPolicy = await guard(() => ({ decision: 'deny', reason: 'mandate_required', evaluations: [] }), {
-      mandate: undefined,
-      mandates: { mandateFor: () => undefined, requestFor: () => hint },
-    });
-    await expect(fromPolicy.g.call('wire', {}, () => 'ok')).rejects.toMatchObject({ request: hint });
-  });
-
-  it('under observe, the outcome of a mandate_required deny carries what to ask for', async () => {
-    const under = [{ id: 'urn:via:action:credit:v2' }];
-    const { g } = await guard(() => ({ decision: 'deny', reason: 'mandate_required', evaluations: [], under }), {
+  it('under observe, a mandate_required is observed as any deny is, with nothing to ask for', async () => {
+    const { g } = await guard(() => ({ decision: 'deny', reason: 'mandate_required', evaluations: [] }), {
       mandate: undefined,
       mandates: { mandateFor: () => undefined },
       mode: 'observe',
     });
-    expect(await g.call('issue_credit', {}, () => 'ran')).toMatchObject({
-      observed: true,
-      request: { kind: 'guardrail', actionIds: ['urn:via:action:credit:v2'] },
-    });
+    const out = await g.call('issue_credit', {}, () => 'ran');
+    expect(out).toMatchObject({ decision: 'deny', reason: 'mandate_required', observed: true, result: 'ran' });
+    expect(out).not.toHaveProperty('request');
   });
 
-  it('asks the source nothing more for a deny with another reason', async () => {
+  it('asks the source nothing more for a policy deny either', async () => {
     const { mandates, asked } = source([undefined]);
     const { g } = await guard(() => ({ decision: 'deny', reason: 'policy_denied', evaluations: [] }), { mandate: undefined, mandates });
     await expect(g.call('wire', {}, () => 'ok')).rejects.toMatchObject({ reason: 'policy_denied' });
@@ -367,13 +328,12 @@ describe('ViaGuard with no agentKey — Humanos holds the key (v0.3 §16.14)', (
     expect(r.reported[0]).not.toHaveProperty('pop');
   });
 
-  it('a mandate_required deny still reads the source again and presents the mandate a person just granted', async () => {
+  it('a mandate_required is presented once: a mandate the source would choose next is never presented', async () => {
     const r = custodialVerifier((input) => (input.mandateId ? allow() : { decision: 'deny', reason: 'mandate_required', evaluations: [] }));
-    const granted = { mandate: MANDATE };
-    const picks = [undefined, granted];
+    const picks = [undefined, { mandate: MANDATE }];
     const g = new ViaGuard({ agentDid: AGENT, verifier: r.verifier, mandates: { mandateFor: () => picks.shift() } });
 
-    expect(await g.call('wire', {}, () => 'sent')).toMatchObject({ decision: 'allow', mandateId: MANDATE.id });
-    expect(r.verified.map((v) => v.mandateId)).toEqual([undefined, MANDATE.id]);
+    await expect(g.call('wire', {}, () => 'sent')).rejects.toMatchObject({ reason: 'mandate_required' });
+    expect(r.verified.map((v) => v.mandateId)).toEqual([undefined]);
   });
 });

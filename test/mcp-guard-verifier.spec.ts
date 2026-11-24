@@ -4,7 +4,6 @@ import type { ViaMcpClient, ViaToolResult } from '../src/mcp/client.js';
 import type { ViaMandateCredential } from '../src/sdk.js';
 import { actionHash } from '../src/sdk.js';
 import { outcomeParams } from '../src/events.js';
-import type { MandateRequestHint } from '../src/types.js';
 
 /** A client double: records every tools/call and answers from a script. */
 function fakeClient(answers: Record<string, ViaToolResult | ((args: Record<string, unknown>) => ViaToolResult)>) {
@@ -116,6 +115,46 @@ describe('McpGuardVerifier — the GuardVerifier over the connector', () => {
     expect(calls[0]).toEqual({ name: 'get_policy', args: { agentDid: AGENT } });
   });
 
+  it('getPolicy: an older platform\'s tool left to a person\'s mandate, by an entry or the default, reads as deny, with nothing to ask a person for', async () => {
+    const refused = 'Not allowed: verify refuses every call of it.';
+    const { client } = fakeClient({
+      get_policy: json({
+        agent: AGENT,
+        policy: { id: 'urn:via:policy:p', version: 3, default: 'mandate' },
+        tools: [
+          {
+            tool: 'issue_credit',
+            access: 'mandate',
+            meaning: 'Needs a person’s mandate on one of the controls in `request.actionIds`: … ask the person for it with request_mandate …',
+            mandateControls: [{ id: 'urn:via:action:credit:v2', name: 'Credit' }],
+            request: { kind: 'guardrail', actionIds: ['urn:via:action:credit:v2'] },
+          },
+          { tool: 'wire', access: 'mandate', meaning: 'Needs a person’s mandate …', mandateControls: [], request: { kind: 'authorization', maxExecutions: 1 } },
+          { tool: 'search', service: 'Docs', access: 'allow', meaning: 'Allowed.' },
+          { tool: 'discount', access: 'rules', meaning: 'Within the rules.', controls: [{ id: 'urn:via:action:d:v1', name: 'D', rules: ['under 10%'], limits: [] }] },
+          { tool: 'delete', access: 'deny', meaning: refused },
+        ],
+      }),
+    });
+    expect(await getPolicy(client, AGENT)).toEqual({
+      agent: AGENT,
+      policy: { id: 'urn:via:policy:p', version: 3, default: 'deny' },
+      tools: [
+        { tool: 'issue_credit', access: 'deny', meaning: refused },
+        { tool: 'wire', access: 'deny', meaning: refused },
+        { tool: 'search', service: 'Docs', access: 'allow', meaning: 'Allowed.' },
+        { tool: 'discount', access: 'rules', meaning: 'Within the rules.', controls: [{ id: 'urn:via:action:d:v1', name: 'D', rules: ['under 10%'], limits: [] }] },
+        { tool: 'delete', access: 'deny', meaning: refused },
+      ],
+    });
+  });
+
+  it('getPolicy: an agent with no policy to read', async () => {
+    const view: AgentPolicy = { agent: AGENT, standing: 'actor_suspended', policy: null, tools: [{ tool: 'a', access: 'not_set', meaning: 'No policy.' }] };
+    const { client } = fakeClient({ get_policy: json(view) });
+    expect(await getPolicy(client, AGENT)).toEqual(view);
+  });
+
   it('outcomeParams is a WIRE CONTRACT — the same golden vectors the platform asserts', () => {
     // Mirrored in agent-mandate-protocol/packages/shared-backend/.../agent-mandate.service.spec.ts.
     // The platform REBUILDS this object to check the report PoP's action_hash; a divergence here
@@ -135,16 +174,17 @@ describe('policyMandates — the policy decides each call alone (v0.3 §21.3)', 
     mandate: { id, credentialSubject: { mandate: { userParams: wrap(userParams) } } },
     action: action && { urn: action.urn, content: { ...(action.tools ? { tools: action.tools } : {}), rules: [] } },
   });
-  const policyOf = (tools: AgentPolicy['tools']): AgentPolicy => ({ agent: AGENT, policy: { id: 'urn:via:policy:p', version: 1, default: 'allow' }, tools });
+  /** The policy as the connector answers it: an older platform's may still leave a tool to a person's mandate. */
+  const policyOf = (tools: Record<string, unknown>[]) => ({ agent: AGENT, policy: { id: 'urn:via:policy:p', version: 1, default: 'allow' }, tools });
 
   /** A connector whose policy the test changes between reads. It answers no `get_mandate`: a call to it throws. */
-  function connector(policy: AgentPolicy) {
+  function connector(policy: ReturnType<typeof policyOf>) {
     const state = { policy, fail: false };
     const { client, calls } = fakeClient({ get_policy: () => (state.fail ? refusal('down') : json(state.policy)) });
     return { client, state, called: () => calls.map((c) => c.name) };
   }
 
-  it('reads get_policy once and keeps it, never get_mandate, and presents no mandate whatever the tool\'s access', async () => {
+  it('presents no mandate whatever the tool\'s access, and reads nothing for a call: no get_policy, no get_mandate', async () => {
     const c = connector(
       policyOf([
         { tool: 'a', access: 'allow', meaning: '' },
@@ -156,57 +196,34 @@ describe('policyMandates — the policy decides each call alone (v0.3 §21.3)', 
     );
     const source = policyMandates(c.client, AGENT);
     for (const tool of ['a', 'd', 'r', 'm', 'n', 'undeclared']) expect(await source.mandateFor({ tool, params: { tool } })).toBeUndefined();
-    expect(c.called()).toEqual(['get_policy']); // read once, kept; no mandates asked for
+    expect(c.called()).toEqual([]);
   });
 
-  it('a tool the policy leaves to a mandate gets none, even under a control the policy names: none is held, and `pick` is never asked', async () => {
-    const c = connector(policyOf([{ tool: 'issue_credit', access: 'mandate', meaning: '', mandateControls: [{ id: 'urn:via:action:credit:v2', name: 'Credit' }] }]));
+  it('a tool an older platform leaves to a mandate gets none, even under a control it names, and `pick` is never asked; read() says deny', async () => {
+    const c = connector(
+      policyOf([{ tool: 'issue_credit', access: 'mandate', meaning: '', mandateControls: [{ id: 'urn:via:action:credit:v2', name: 'Credit' }] }]),
+    );
     const asked: unknown[] = [];
     const source = policyMandates(c.client, AGENT, { pick: (call) => (asked.push(call), held('m', null) as unknown as GuardMandate) });
     expect(await source.mandateFor({ tool: 'issue_credit', params: { tool: 'issue_credit' } })).toBeUndefined();
-    expect(await source.read()).toEqual({ policy: c.state.policy, held: [] });
+    expect(await source.read()).toEqual({
+      policy: { ...c.state.policy, tools: [{ tool: 'issue_credit', access: 'deny', meaning: 'Not allowed: verify refuses every call of it.' }] },
+      held: [],
+    });
     expect(asked).toEqual([]);
-    expect(c.called()).not.toContain('get_mandate');
-  });
-
-  it('on a mandate_required retry reads the policy again and keeps it, so requestFor answers from it; still no mandate', async () => {
-    const c = connector(policyOf([{ tool: 'wire', access: 'allow', meaning: '' }]));
-    const source = policyMandates(c.client, AGENT);
-    expect(await source.mandateFor({ tool: 'wire', params: { tool: 'wire' } })).toBeUndefined();
-    expect(await source.requestFor('wire')).toBeUndefined();
-
-    // Since the read, the policy leaves the tool to a person's mandate.
-    const request: MandateRequestHint = { kind: 'authorization', maxExecutions: 1 };
-    c.state.policy = policyOf([{ tool: 'wire', access: 'mandate', meaning: '', request }]);
-    expect(await source.mandateFor({ tool: 'wire', params: { tool: 'wire' } }, {})).toBeUndefined();
-    expect(await source.requestFor('wire')).toEqual(request);
-    // The new read is kept for the calls after.
-    expect(await source.mandateFor({ tool: 'wire', params: { tool: 'wire' } })).toBeUndefined();
-    expect(c.called()).toEqual(['get_policy', 'get_policy']);
-  });
-
-  it('a failed read is not kept: the next call reads again', async () => {
-    const c = connector(policyOf([{ tool: 'wire', access: 'allow', meaning: '' }]));
-    c.state.fail = true;
-    const source = policyMandates(c.client, AGENT);
-    await expect(source.mandateFor({ tool: 'wire', params: { tool: 'wire' } })).rejects.toBeInstanceOf(McpVerifierError);
-    c.state.fail = false;
-    expect(await source.mandateFor({ tool: 'wire', params: { tool: 'wire' } })).toBeUndefined();
-    expect(c.called()).toEqual(['get_policy', 'get_policy']);
-  });
-
-  it('says what a tool the policy leaves to a mandate needs, from the policy it read, and nothing for any other tool', async () => {
-    const request: MandateRequestHint = { kind: 'guardrail', actionIds: ['urn:via:action:credit:v2'] };
-    const c = connector(
-      policyOf([
-        { tool: 'issue_credit', access: 'mandate', meaning: '', request },
-        { tool: 'search', access: 'allow', meaning: '' },
-      ]),
-    );
-    const source = policyMandates(c.client, AGENT);
-    expect(await source.requestFor('issue_credit')).toEqual(request);
-    expect(await source.requestFor('search')).toBeUndefined();
     expect(c.called()).toEqual(['get_policy']);
+  });
+
+  it('read() reads the policy each time it is asked, and throws when it cannot', async () => {
+    const c = connector(policyOf([{ tool: 'wire', access: 'allow', meaning: '' }]));
+    const source = policyMandates(c.client, AGENT);
+    c.state.fail = true;
+    await expect(source.read()).rejects.toBeInstanceOf(McpVerifierError);
+    c.state.fail = false;
+    expect((await source.read()).policy.tools).toEqual([{ tool: 'wire', access: 'allow', meaning: '' }]);
+    c.state.policy = policyOf([{ tool: 'wire', access: 'deny', meaning: '' }]);
+    expect((await source.read()).policy.tools).toEqual([{ tool: 'wire', access: 'deny', meaning: '' }]);
+    expect(c.called()).toEqual(['get_policy', 'get_policy', 'get_policy']);
   });
 
   it('coveringMandate ranks by coverage first: a preferred control that does not cover the tool is never chosen', () => {

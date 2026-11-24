@@ -16,14 +16,14 @@
  *    caller's organization, a caller without an org key), which is thrown.
  *
  * Also here, the agent's startup question, `getPolicy` ("what does my organization's policy let me
- * do?"), and `policyMandates`, the guard's mandate source built on it. The SDK reads no mandates:
- * the organization's policy decides each call alone, so `policyMandates` presents none.
+ * do?"), and `policyMandates`, the guard's mandate source beside it. The SDK reads and asks for no
+ * mandates: the organization's policy decides each call alone, so `policyMandates` presents none.
  */
 import type { ViaMcpClient } from './client.js';
 import type { CallMandate, MandateSource } from '../guard.js';
 import type { ActionRule, ViaEvent } from '../sdk.js';
 import { unwrapUserParamValues } from '../sdk.js';
-import type { ChallengeGrant, CompiledLike, GuardVerifier, MandateRequestHint, ReportOutcomeInput, VerifyInput, VerifyOutcome } from '../types.js';
+import type { ChallengeGrant, CompiledLike, GuardVerifier, ReportOutcomeInput, VerifyInput, VerifyOutcome } from '../types.js';
 
 /** Raised when the connector could not answer a verifier call — distinct from a deny. */
 export class McpVerifierError extends Error {
@@ -108,8 +108,11 @@ export type GuardMandate = CallMandate & {
   action: { urn: string; content: { rules?: ActionRule[]; tools?: string[] } } | null;
 };
 
-/** A tool's access as the organization's policy sets it for the agent (v0.3 §21.1); `not_set`: its default decides. */
-export type ToolAccess = 'allow' | 'rules' | 'mandate' | 'deny' | 'not_set';
+/**
+ * A tool's access as the organization's policy sets it for the agent (v0.3 §21.1); `not_set`: its default decides. An
+ * older platform may still answer `mandate`, a tool left to a person's mandate: `getPolicy` reads it as `deny`.
+ */
+export type ToolAccess = 'allow' | 'rules' | 'deny' | 'not_set';
 
 /** `get_policy`'s answer: the organization's policy as the agent's own calls meet it, for the tools it declared. */
 export interface AgentPolicy {
@@ -126,18 +129,37 @@ export interface AgentPolicy {
     meaning: string;
     /** `rules`: every control the call must pass, its rules in words and its limits. */
     controls?: { id: string; name: string; rules: string[]; limits: { name: string; value: unknown; description?: string }[] }[];
-    /** `mandate`: the mandate controls made for the tool, narrowed to the one the policy names when it names one. */
-    mandateControls?: { id: string; name: string }[];
-    /** `mandate`: what to ask a person for (`requestMandate`). */
-    request?: MandateRequestHint;
   }[];
 }
 
-/** What the organization's policy lets the agent do with each tool it declared (the connector's `get_policy`). */
+/**
+ * `get_policy`'s answer as an older platform may still send it: a tool, or the default, left to a person's mandate, with
+ * the mandate controls made for the tool and what to ask a person for.
+ */
+type AnsweredPolicy = Omit<AgentPolicy, 'policy' | 'tools'> & {
+  policy: { id: string; version: number; default: 'allow' | 'deny' | 'mandate' } | null;
+  tools: (Omit<AgentPolicy['tools'][number], 'access'> & { access: ToolAccess | 'mandate'; mandateControls?: unknown; request?: unknown })[];
+};
+
+/** What a tool left to a person's mandate means now: the platform's words for a Deny entry. */
+const REFUSED = 'Not allowed: verify refuses every call of it.';
+
+/**
+ * What the organization's policy lets the agent do with each tool it declared (the connector's `get_policy`). The SDK
+ * asks nobody for a mandate, so a tool an older platform still leaves to one (`mandate`, by an entry or the default) is
+ * read as `deny`, which is what becomes of its calls, and its `mandateControls` and `request` are left out.
+ */
 export async function getPolicy(client: ViaMcpClient, agentDid: string): Promise<AgentPolicy> {
   const r = await client.callTool('get_policy', { agentDid });
   if (r.isError) throw new McpVerifierError('get_policy', r.text);
-  return parse<AgentPolicy>('get_policy', r.text);
+  const { policy, tools, ...answer } = parse<AnsweredPolicy>('get_policy', r.text);
+  return {
+    ...answer,
+    policy: policy && { ...policy, default: policy.default === 'mandate' ? 'deny' : policy.default },
+    tools: (tools ?? []).map(({ mandateControls: _controls, request: _request, ...t }) =>
+      t.access === 'mandate' ? { ...t, access: 'deny', meaning: REFUSED } : { ...t, access: t.access },
+    ),
+  };
 }
 
 /**
@@ -191,48 +213,24 @@ export interface PolicyMandatesOptions {
   pick?: (call: { tool: string; params: Record<string, unknown> }, held: GuardMandate[], preferred: string[]) => GuardMandate | undefined;
 }
 
-/** `policyMandates`' source, with what it last read. */
+/** `policyMandates`' source. */
 export interface PolicyMandates extends MandateSource {
-  /** Read the organization's policy again, for the calls after. */
+  /** Read the organization's policy (`getPolicy`): the proxy reads it at start. */
   read(): Promise<{
     policy: AgentPolicy;
     /** @deprecated Always empty: the SDK reads no mandates, and presents none. */
     held: GuardMandate[];
   }>;
-  /** What a person must grant for a tool the policy leaves to a mandate (`get_policy`'s `request`); none for any other. */
-  requestFor(tool: string): Promise<MandateRequestHint | undefined>;
 }
 
 /**
- * The guard's mandate source over the connector (v0.3 §21.3): it reads `get_policy` once and keeps it, and presents no
- * mandate. The organization's policy decides each call alone (allow, restrict or deny), so the source reads no
- * mandates, and every call binds the policy. A `mandate_required` refusal, from a policy that still leaves a tool to a
- * person's mandate, reads the policy again, so `requestFor` answers from what it says now; the call is not presented
- * again.
+ * The guard's mandate source over the connector (v0.3 §21.3): it presents no mandate, and reads nothing for a call. The
+ * organization's policy decides each call alone (allow, restrict or deny), so every call binds the policy, and one it
+ * refuses is not presented again. `read()` reads the policy, for code that wants it.
  */
 export function policyMandates(client: ViaMcpClient, agentDid: string, _opts: PolicyMandatesOptions = {}): PolicyMandates {
-  let state: ReturnType<PolicyMandates['read']> | undefined;
-  const read = (): ReturnType<PolicyMandates['read']> => {
-    const reading: ReturnType<PolicyMandates['read']> = getPolicy(client, agentDid).then((policy) => ({ policy, held: [] }));
-    state = reading;
-    // A failed read is not kept: the next call reads again.
-    reading.catch(() => {
-      if (state === reading) state = undefined;
-    });
-    return reading;
-  };
-
   return {
-    read,
-    async requestFor(tool) {
-      const { policy } = await (state ?? read());
-      return policy.tools.find((t) => t.tool === tool && t.access === 'mandate')?.request;
-    },
-    async mandateFor(_call, retry) {
-      // The policy is read on the first call and kept, and read again on a `mandate_required`: `requestFor` answers
-      // from it. A call presents no mandate whatever the tool's access.
-      await (retry || !state ? read() : state);
-      return undefined;
-    },
+    read: async () => ({ policy: await getPolicy(client, agentDid), held: [] }),
+    mandateFor: () => undefined,
   };
 }

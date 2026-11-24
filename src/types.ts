@@ -34,8 +34,9 @@ export interface VerifyOutcome {
    */
   callProof?: { decision: string; record: string };
   /**
-   * v0.3 §21.3 — with `mandate_required`: the actions the organization's policy needs the mandate to be under, any one
-   * of them. Ask the person for a mandate under one.
+   * v0.3 §21.3 — with `mandate_required`, which only an older platform answers: the controls its policy named.
+   *
+   * @deprecated Humanos no longer answers `mandate_required`, and the SDK asks nobody for a mandate.
    */
   under?: { id: string }[];
 }
@@ -119,12 +120,6 @@ export interface GuardVerifier {
   verify(input: VerifyInput): VerifyOutcome | Promise<VerifyOutcome>;
   reportOutcome(input: ReportOutcomeInput): Promise<{ recorded: unknown } | { rejected: string }> | { recorded: unknown } | { rejected: string };
 }
-
-/**
- * What a call refused `mandate_required` needs a person to grant: a guardrail under one of `actionIds` (the control's
- * version URNs, what a mandate request takes as `actionId`), or with no control an authorization for one call.
- */
-export type MandateRequestHint = { kind: 'guardrail'; actionIds: string[] } | { kind: 'authorization'; maxExecutions: 1 };
 
 // ── MCP shapes (the connector's tool surface) ────────────────────────────────
 

@@ -117,7 +117,6 @@ export type {
   ChallengeGrant,
   // v0.3 §21.4 — who a call is for, and the mandate or policy its PoP binds.
   CallAuthority,
-  MandateRequestHint,
   McpTool,
   McpToolsList,
   ExtractedDraft,

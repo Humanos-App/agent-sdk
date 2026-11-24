@@ -50,7 +50,7 @@ const wrap = (v: Record<string, unknown>) => Object.fromEntries(Object.entries(v
 
 /**
  * v0.3 §21.3 — the organization's policy, per tool: allowed, refused, or left to a person's mandate (under an action),
- * as a policy set before Delegate was withdrawn may still say.
+ * which only an older platform still answers, refusing the call `mandate_required`.
  */
 type StandinPolicy = Record<string, 'allow' | 'deny' | 'mandate' | { under: string }>;
 const POLICY_URN = 'urn:via:policy:p1';
@@ -97,7 +97,7 @@ function humanos(policy: StandinPolicy = POLICY, byDefault: 'allow' | 'deny' = '
       }
       if (name === 'get_policy') {
         const names = [...new Set(declared.flatMap((d) => (d.tools as { name: string }[]).map((t) => t.name)))];
-        // A tool left to a mandate: its request, as the connector words it: under the control the policy names, else one call's authorization.
+        // A tool left to a mandate: its request, as an older connector words it: under the control the policy names, else one call's authorization.
         const request = (tool: string) => {
           const e = policy[tool];
           return typeof e === 'object' ? { kind: 'guardrail', actionIds: [e.under] } : e === 'mandate' ? { kind: 'authorization', maxExecutions: 1 } : undefined;
@@ -183,19 +183,17 @@ describe('the governing proxy — ViaGuard in front of MCP servers', () => {
     expect(h.reported).toEqual([]);
   });
 
-  it('presents no mandate and never asks for one: a tool the policy leaves to a mandate is refused, the policy read again, nothing sent', async () => {
+  it('presents no mandate and never asks for one: a tool an older platform leaves to a mandate is refused as the policy refuses it, nothing sent', async () => {
     const { call, slack, h } = await setup({ policy: { slack_send_message: 'mandate' } });
     const policyReads = () => h.called.filter((t) => t === 'get_policy').length;
     expect(policyReads()).toBe(1); // at start
     const out = await call('slack_send_message', { channel_id: 'C-OK', message: 'hi' });
-    expect(out.isError).toBe(true);
-    expect(out.text).toMatch(/No mandate covers slack_send_message \(Slack\)/);
-    // Presented once, binding the policy: the source re-read it on the mandate_required, and had no mandate to try.
+    expect(out).toEqual({ text: 'Blocked by VIA: the organization’s policy does not allow it. Nothing was sent to Slack. Do not retry.', isError: true });
+    // Presented once, binding the policy, and the policy not read again.
     expect(h.verified).toEqual([expect.objectContaining({ policy: POLICY_URN, tool: 'slack_send_message' })]);
     expect(h.verified[0]).not.toHaveProperty('mandateId');
-    expect(policyReads()).toBe(2);
     expect((await call('slack_search_users', { query: 'ana' })).isError).toBe(false);
-    expect(policyReads()).toBe(2); // the new read is kept
+    expect(policyReads()).toBe(1);
     expect(h.called).not.toContain('get_mandate');
     expect(slack.journal.map((j) => j.tool)).toEqual(['slack_search_users']);
   });
@@ -299,20 +297,21 @@ describe('a call the policy decides alone (v0.3 §21.3)', () => {
     ['the policy refuses it', { slack_create_canvas: 'deny' } as StandinPolicy, /Blocked by VIA: the organization’s policy does not allow it/],
     ['its default refuses it', {} as StandinPolicy, /Blocked by VIA: the organization’s policy does not allow it/],
     [
-      'the policy leaves it to a person with no control, and no mandate covers it',
+      'an older platform leaves it to a person with no control',
       { slack_create_canvas: 'mandate' } as StandinPolicy,
-      /No mandate covers slack_create_canvas \(Slack\).*ask the person to authorize this one call/,
+      /^Blocked by VIA: the organization’s policy does not allow it\. Nothing was sent to Slack\. Do not retry\.$/,
     ],
     [
-      'the policy needs a mandate under a named action',
+      'an older platform leaves it to a mandate under a named action',
       { slack_create_canvas: { under: 'urn:via:action:canvas' } } as StandinPolicy,
-      /needs a person's mandate under urn:via:action:canvas for it: ask the person for one/,
+      /^Blocked by VIA: the organization’s policy does not allow it\. Nothing was sent to Slack\. Do not retry\.$/,
     ],
   ])('sends nothing when %s', async (_case, policy, said) => {
     const { call, slack } = await setup({ policy });
     const out = await call('slack_create_canvas', { title: 'Q4' });
     expect(out.isError).toBe(true);
     expect(out.text).toMatch(said);
+    expect(out.text).not.toMatch(/mandate|person|get_action/);
     expect(slack.journal).toEqual([]);
   });
 });

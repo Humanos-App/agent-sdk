@@ -45,7 +45,9 @@ export function defaultPlainReason(r?: string): string {
     required_param_missing: 'a value a rule needs to check was left out',
     // v0.3 §21 — the organization's policy
     policy_denied: 'the organization’s policy does not allow it',
-    mandate_required: 'it needs a person’s permission, and none covers it',
+    // An older platform's answer for a tool its policy left to a person's mandate: the SDK asks nobody for one, and
+    // Humanos now refuses such a call `policy_denied`.
+    mandate_required: 'the organization’s policy does not allow it',
     stepup_required: 'it needs an approval nobody is named to give',
     // v0.3 delegation
     tool_not_delegated: 'this action was not delegated to this sub-agent',
